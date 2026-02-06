@@ -4,10 +4,9 @@ import os.path
 from shutil import rmtree
 import json
 import whisper
-import re
 import soundfile as sf
 import numpy as np
-from content_filter.utils import create_new_file_if_missing
+from content_filter.utils import *
 
 def censor_audio_from_video(video_path: str, profanity_path: str, output_folder: str, debug_output_on: bool = True):
     # Create temporary directory
@@ -63,7 +62,7 @@ def _load_profanity(profanity_path, tmpdir):
     profanity_set = set()
     with open(profanity_path, "r", encoding="utf-8") as f:
         for line in f:
-            word = line.strip().lower()
+            word = clean_word(line)
             profanity_set.add(word)
     
     return profanity_set
@@ -79,9 +78,6 @@ def _transcribe_audio(audio_file, output_path, model_name="small"):
 
     return output_path
 
-def _remove_punctuation(text: str) -> str:
-    return re.sub(r"[^\w\s]", "", text)
-
 def _identify_profanity(transcription_path, profanity_set):
     """
     Returns word-timestamps pairs (and probability of correct transcription).
@@ -94,7 +90,7 @@ def _identify_profanity(transcription_path, profanity_set):
     for seg in transcription['segments']:
         # Note to self: will likely generate false positives as i am not looking at probability.
         for wordStamp in seg['words']:
-            word = _remove_punctuation(wordStamp['word'].strip()).lower()
+            word = clean_word(wordStamp[word])
             if word in profanity_set:
                 profanities.append(wordStamp)
 
