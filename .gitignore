@@ -212,3 +212,4 @@ data/
 *.wav
 scaffold.py
 src/content_filter/config/profanity_words.txt
+.vscode
