@@ -1,16 +1,16 @@
 from pathlib import Path
 import subprocess
-import os.path
+import os
 from shutil import rmtree
 import json
+from json import JSONDecodeError
 import whisper
 import soundfile as sf
 import numpy as np
 from content_filter.utils import *
 
-def censor_audio_from_video(video_path: str, profanity_path: str, output_folder: str, debug_output_on: bool = True):
+def censor_audio_from_video(video_path: str, profanity_set: set[str], output_folder: str, tmpdir="temp", debug_output_on: bool = True):
     # Create temporary directory
-    tmpdir = "temp"
     create_new_file_if_missing(tmpdir, os.mkdir, tmpdir)
 
     if debug_output_on:
@@ -21,11 +21,6 @@ def censor_audio_from_video(video_path: str, profanity_path: str, output_folder:
     create_new_file_if_missing(audio_path, _extract_from_video, video_path, audio_path)
     if debug_output_on:
         print("Audio extracted!")
-    
-    # Load profanity set (note that no new file is created.)
-    profanity_set = _load_profanity(profanity_path, tmpdir)
-    if debug_output_on:
-        print("Profanity set loaded!")
 
     # Save transcription as a json
     transcription_path = os.path.join(tmpdir, "transcription.json")
@@ -55,26 +50,18 @@ def _extract_from_video(video_path, output_file, sample_rate=16000):
 
     subprocess.run(command, check=True)
 
-def _load_profanity(profanity_path, tmpdir):
-    """
-    Load the list of profanity words from a file, returning a set.
-    """
-    profanity_set = set()
-    with open(profanity_path, "r", encoding="utf-8") as f:
-        for line in f:
-            word = clean_word(line)
-            profanity_set.add(word)
-    
-    return profanity_set
-
 def _transcribe_audio(audio_file, output_path, model_name="small"):
     """
     Use openai whisper to create transcription, storing it as a json.
     Returns path to json.
     """
     model = whisper.load_model(model_name)
-    with open(output_path, "w") as file:
-        json.dump(model.transcribe(audio_file, word_timestamps=True), file)
+    transcription = model.transcribe(audio_file, word_timestamps=True, verbose=False)
+
+    tmp_output_path = f"{output_path}.tmp"
+    with open(tmp_output_path, "w", encoding="utf-8") as file:
+        json.dump(transcription, file)
+    os.replace(tmp_output_path, output_path)
 
     return output_path
 
@@ -90,7 +77,7 @@ def _identify_profanity(transcription_path, profanity_set):
     for seg in transcription['segments']:
         # Note to self: will likely generate false positives as i am not looking at probability.
         for wordStamp in seg['words']:
-            word = clean_word(wordStamp[word])
+            word = clean_word(wordStamp['word'])
             if word in profanity_set:
                 profanities.append(wordStamp)
 
@@ -143,6 +130,12 @@ def cleanup_audio(temp_folder: Path):
     """
     ## Check temp folder has word temp in it (mostly for testing, as real application, this should be deleted automatically)
     if (temp_folder.name == "temp"):
-        rmtree(temp_folder)
+        keep_files = [
+            "transcription.json"
+        ]
+
+        for file_path in temp_folder.iterdir():
+            if file_path.is_file() and file_path.name not in keep_files:
+                file_path.unlink()
     else:
         raise FileNotFoundError(f"Folder you are trying to delete is named {temp_folder.name}. Are you sure you want to delete it?")
