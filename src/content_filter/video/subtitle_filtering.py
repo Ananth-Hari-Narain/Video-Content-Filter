@@ -163,51 +163,30 @@ class SubtitleFilterer:
         return merged_spans
 
     def _scale_box_to_text_span(self, box, full_image_offset, text, span):
-        if len(box) != 4 or not text:
-            return None
-
+        """
+        @param box: 4-tuple in the form x, y, w, h
+        @param full_image_offset: tuple in the form (offset_x, offset_y).
+        @param text: non-empty string that contains the text in the textbox
+        @param span: contains the start and end index of the swear word
+        """
         start_idx, end_idx = span
         char_count = len(text)
-        if char_count == 0:
-            return None
 
-        left_ratio = max(0.0, min(1.0, start_idx / char_count))
-        right_ratio = max(0.0, min(1.0, end_idx / char_count))
-        if right_ratio <= left_ratio:
-            return None
+        x, y, w, h = box
 
-        top_left, top_right, bottom_right, bottom_left = box
+        newX = int(x + w * (start_idx / char_count))
+        newW = int(w * (end_idx + 1 - start_idx) / char_count)
 
-        def interpolate(point_a, point_b, ratio):
-            return [
-                point_a[0] + (point_b[0] - point_a[0]) * ratio,
-                point_a[1] + (point_b[1] - point_a[1]) * ratio,
-            ]
-
-        span_top_left = interpolate(top_left, top_right, left_ratio)
-        span_top_right = interpolate(top_left, top_right, right_ratio)
-        span_bottom_left = interpolate(bottom_left, bottom_right, left_ratio)
-        span_bottom_right = interpolate(bottom_left, bottom_right, right_ratio)
-
-        x_offset, y_offset = full_image_offset
-        translated_box = [
-            [span_top_left[0] + x_offset, span_top_left[1] + y_offset],
-            [span_top_right[0] + x_offset, span_top_right[1] + y_offset],
-            [span_bottom_right[0] + x_offset, span_bottom_right[1] + y_offset],
-            [span_bottom_left[0] + x_offset, span_bottom_left[1] + y_offset],
-        ]
-        return translated_box
+        return (newX, y, newW, h)
 
     def _run_easy_ocr_on_image(self, image):
-        """
-        Run EasyOCR on an image
-        """
         results = self.reader.readtext(image)
         self.results = results
 
     def filter_subtitles(self, image, subtitle_region, text_to_bleep):
         """
-        Run main algorithm for filtering subtitles
+        Run main algorithm for filtering subtitles.
+        Text to bleep: the profanity that needs to be bleeped
         """
         x, y, w, h = subtitle_region
         ## Only run easy ocr on subtitle region
