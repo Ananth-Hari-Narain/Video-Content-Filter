@@ -1,7 +1,43 @@
-from typing import Iterable, Optional
 import easyocr
+import cv2
+import numpy as np
+from math import floor, ceil
 
-class SubtitleFilterer:
+
+def _compute_edge_map(crop):
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    mag = np.sqrt(gx**2 + gy**2)
+    return mag / (mag.max() + 1e-8)
+
+
+def _crop_box(frame, box):
+    pts = np.array(box, dtype=np.int32)
+    x0 = max(0, pts[:, 0].min())
+    x1 = min(frame.shape[1], pts[:, 0].max())
+    y0 = max(0, pts[:, 1].min())
+    y1 = min(frame.shape[0], pts[:, 1].max())
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return frame[y0:y1, x0:x1]
+
+
+def _text_still_present(ref_edge_map, frame, box, threshold=0.75):
+    crop = _crop_box(frame, box)
+    if crop is None or crop.size == 0:
+        return False
+    new_edges = _compute_edge_map(crop)
+    if new_edges.shape != ref_edge_map.shape:
+        new_edges = cv2.resize(
+            new_edges.astype(np.float32),
+            (ref_edge_map.shape[1], ref_edge_map.shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        ).astype(np.float64)
+    corr = np.corrcoef(ref_edge_map.flatten(), new_edges.flatten())[0, 1]
+    return not np.isnan(corr) and corr > threshold
+
+class _SubtitleFilterer:
     def __init__(self, relative_char_widths):
         # Only english for now
         self.reader = easyocr.Reader(["en"])
@@ -79,9 +115,26 @@ class SubtitleFilterer:
             (int(x + profanity_bottom_left[0]), int(y + profanity_bottom_left[1])),
         ]
 
-    def _run_easy_ocr_on_image(self, image):
+    def run_easy_ocr_on_image(self, image):
         results = self.reader.readtext(image)
         self.results = results
+
+    def boxes_from_results(self, word, subtitle_offset):
+        """
+        Extract bounding boxes for a single profanity word from the most recent
+        OCR results (self.results). Avoids re-running OCR when multiple lookups
+        are needed for the same frame.
+        """
+        x, y = subtitle_offset
+        boxes = []
+        for (box, text, _) in self.results:
+            text = text.lower()
+            spans = self._find_profanity_span_per_word(word, text)
+            for span in spans:
+                scaled_box = self._scale_box_to_text_span(box, (x, y), text, span)
+                if scaled_box is not None:
+                    boxes.append(scaled_box)
+        return boxes
 
     def filter_subtitles(self, image, subtitle_region, text_to_bleep):
         """
@@ -90,7 +143,7 @@ class SubtitleFilterer:
         """
         x, y, w, h = subtitle_region
         ## Only run easy ocr on subtitle region
-        self._run_easy_ocr_on_image(image[y: y+h, x: x+w])
+        self.run_easy_ocr_on_image(image[y: y+h, x: x+w])
 
         boxes = []
         for (box, text, _) in self.results:
@@ -104,3 +157,147 @@ class SubtitleFilterer:
                         boxes.append(scaled_box)
 
         return boxes
+    
+
+def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, subtitle_region = None):    
+    filterer = _SubtitleFilterer(relative_char_widths)
+    capture = cv2.VideoCapture(video_path)
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    orig_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    orig_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    bounding_quads = {}  #
+    AUDIO_TOLERANCE = 0.2   # Measured in ms
+    VIDEO_SCALE_FACTOR = 0.63  # We will scale image down by this amount to make life easier
+
+    # I am assuming sutitles are not printed one character at a time, as is generally the case
+    timespans = []  # Effectively the timestamps as a list. Allows timestamps to be ordered
+
+    for timestamp in bad_word_timestamps:
+        # Multiplying by 1000 to convert to milliseconds from seconds
+        start = 1000 * floor(timestamp['start'] - AUDIO_TOLERANCE)
+        end = 1000 * ceil(timestamp['end'] + AUDIO_TOLERANCE)
+        timespans.append((timestamp['word'], start, end))
+
+    timespans.sort(key=lambda span: span[1])  # Sort by start times
+    found_profanity_per_timestamp = [False] * len(timespans)
+
+    capture.set(cv2.CAP_PROP_POS_MSEC, timespans[0][1])  # Measured in ms
+    timespan_index = 0  # Index of the earliest unconfirmed timespan
+
+    # cache[timespan_index] = (word, quad_in_scaled_coords, ref_edge_map)
+    cache = {}
+
+    while (timespan_index < len(timespans) or cache) and capture.isOpened():
+        ret, frame = capture.read()
+        if not ret:
+            break
+        current_pos_in_video = capture.get(cv2.CAP_PROP_POS_MSEC)
+
+        scaled = cv2.resize(frame, (0, 0), fx=VIDEO_SCALE_FACTOR, fy=VIDEO_SCALE_FACTOR)
+
+        if subtitle_region is not None:
+            sx, sy, sw, sh = subtitle_region
+            scaled_sub = (
+                int(sx * VIDEO_SCALE_FACTOR),
+                int(sy * VIDEO_SCALE_FACTOR),
+                int(sw * VIDEO_SCALE_FACTOR),
+                int(sh * VIDEO_SCALE_FACTOR),
+            )
+        else:
+            scaled_sub = (0, 0, scaled.shape[1], scaled.shape[0])
+
+        sub_x, sub_y = scaled_sub[0], scaled_sub[1]
+        boxes_scaled = []
+        cache_misses = []
+
+        # Step 1: Verify each cached word is still at its known position.
+        for cache_key in list(cache.keys()):
+            word, box, ref_edge_map = cache[cache_key]
+            if _text_still_present(ref_edge_map, scaled, box):
+                boxes_scaled.append(box)
+            else:
+                cache_misses.append(cache_key)
+
+        # Timespans that are active this frame and not yet found.
+        active_uncached = [
+            i for i in range(timespan_index, len(timespans))
+            if not found_profanity_per_timestamp[i]
+            and timespans[i][1] <= current_pos_in_video <= timespans[i][2]
+            and i not in cache
+        ]
+
+        # Run OCR at most once per frame, only when a cache miss or new active
+        # timespan requires it.
+        if cache_misses or active_uncached:
+            sub_crop = scaled[
+                scaled_sub[1]:scaled_sub[1] + scaled_sub[3],
+                scaled_sub[0]:scaled_sub[0] + scaled_sub[2],
+            ]
+            filterer.run_easy_ocr_on_image(sub_crop)
+
+            # Group misses and active uncached by word. Sort
+            # miss_keys descending so the earliest timespan indices are dropped
+            # first if OCR finds fewer boxes than expected.
+            missed_by_word = {}
+            for cache_key in cache_misses:
+                word = cache[cache_key][0]
+                missed_by_word.setdefault(word, []).append(cache_key)
+
+            uncached_by_word = {}
+            for i in active_uncached:
+                word = timespans[i][0]
+                uncached_by_word.setdefault(word, []).append(i)
+
+            for word in set(missed_by_word) | set(uncached_by_word):
+                found = filterer.boxes_from_results(word, (sub_x, sub_y))
+                miss_keys = sorted(missed_by_word.get(word, []))
+                uncached_idxs = uncached_by_word.get(word, [])
+
+                for k in miss_keys:
+                    del cache[k]
+
+                available = list(found)
+                for miss_key in miss_keys:
+                    if not available:
+                        break
+                    new_box = available.pop(0)
+                    crop = _crop_box(scaled, new_box)
+                    if crop is not None and crop.size > 0:
+                        cache[miss_key] = (word, new_box, _compute_edge_map(crop))
+                        boxes_scaled.append(new_box)
+
+                for ts_i, new_box in zip(uncached_idxs, available):
+                    crop = _crop_box(scaled, new_box)
+                    if crop is not None and crop.size > 0:
+                        cache[ts_i] = (word, new_box, _compute_edge_map(crop))
+                        boxes_scaled.append(new_box)
+                    found_profanity_per_timestamp[ts_i] = True
+
+        # Expire timespans that ended before we got a chance to find them.
+        i = timespan_index
+        while i < len(timespans) and timespans[i][1] <= current_pos_in_video:
+            if not found_profanity_per_timestamp[i] and current_pos_in_video > timespans[i][2]:
+                found_profanity_per_timestamp[i] = True
+            i += 1
+
+        # Advance timespan_index past all confirmed/expired timespans.
+        while timespan_index < len(timespans) and found_profanity_per_timestamp[timespan_index]:
+            timespan_index += 1
+
+        # Seek optimisation: if cache is empty and we are between timespans,
+        # jump directly to the start of the next one.
+        if not cache and timespan_index < len(timespans):
+            next_start_ms = timespans[timespan_index][1]
+            if current_pos_in_video < next_start_ms:
+                capture.set(cv2.CAP_PROP_POS_MSEC, next_start_ms)
+                continue
+
+        # Scale quads to original resolution and record them against the frame index.
+        if boxes_scaled:
+            inv = 1.0 / VIDEO_SCALE_FACTOR
+            frame_idx = int(capture.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            quads = [[(int(px * inv), int(py * inv)) for px, py in box] for box in boxes_scaled]
+            bounding_quads.setdefault(frame_idx, []).extend(quads)
+
+    capture.release()
+    return bounding_quads, fps, (orig_w, orig_h)

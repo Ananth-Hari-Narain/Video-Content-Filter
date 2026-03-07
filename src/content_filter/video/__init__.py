@@ -1,1 +1,1 @@
-from .subtitle_filtering import SubtitleFilterer
+from .subtitle_filtering import get_bounding_quads
