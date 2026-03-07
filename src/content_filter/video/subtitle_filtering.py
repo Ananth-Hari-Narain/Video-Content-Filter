@@ -1,183 +1,83 @@
 from typing import Iterable, Optional
-
 import easyocr
-from copy import deepcopy
-
-
-class Trie:
-    END = "__end__"
-
-    def __init__(self, words: Optional[Iterable[str]] = None, root = None):
-        """
-        Pre-requesite: root must be a dictionary of type {str: Trie}.
-        If both words and root given, words will be used instead
-        """
-        self.root = {}
-        if words is not None:
-            for word in words:
-                self.insert(word)
-
-        elif root is not None:
-            self.root = deepcopy(root)
-            return
-
-    @staticmethod
-    def _normalize_word(word):
-        return "".join(ch for ch in str(word).lower() if ch.isalpha())
-
-    def insert(self, word):
-        normalized_word = self._normalize_word(word)
-        if not normalized_word:
-            return
-
-        node = self.root
-        for ch in normalized_word:
-            node = node.setdefault(ch, {})
-        node[self.END] = True
-
-    def find_spans(self, normalized_text):
-        spans = []
-        text_len = len(normalized_text)
-
-        for start in range(text_len):
-            frontier = [self.root]
-            end = start
-
-            while end < text_len and frontier:
-                ch = normalized_text[end]
-                next_frontier = []
-
-                if ch == "*":
-                    for node in frontier:
-                        for edge, child in node.items():
-                            if edge != self.END:
-                                next_frontier.append(child)
-                else:
-                    for node in frontier:
-                        child = node.get(ch)
-                        if child is not None:
-                            next_frontier.append(child)
-
-                for node in next_frontier:
-                    if self.END in node:
-                        spans.append((start, end + 1))
-
-                frontier = next_frontier
-                end += 1
-
-        return spans
-
-
-def _normalize_text_with_map(text: str):
-    normalized = []
-    index_map = []
-    for original_idx, ch in enumerate(text):
-        lower_ch = ch.lower()
-        if lower_ch.isalpha() or lower_ch == "*":
-            normalized.append(lower_ch)
-            index_map.append(original_idx)
-    return "".join(normalized), index_map
-
-
-def find_profanity_span_per_word(
-    profanity_set: Iterable[str],
-    text_words: list[str],
-) -> list[Optional[tuple[int, int]]]:
-    trie = Trie(words=list(profanity_set))
-    cached_results: dict[str, Optional[tuple[int, int]]] = {}
-    spans_for_words: list[Optional[tuple[int, int]]] = []
-
-    for text_word in text_words:
-        cached_span = cached_results.get(text_word)
-        if cached_span is not None or text_word in cached_results:
-            spans_for_words.append(cached_span)
-            continue
-
-        normalized_text, normalized_to_original_index = _normalize_text_with_map(text_word)
-        if not normalized_text:
-            cached_results[text_word] = None
-            spans_for_words.append(None)
-            continue
-
-        normalized_spans = trie.find_spans(normalized_text)
-        if not normalized_spans:
-            cached_results[text_word] = None
-            spans_for_words.append(None)
-            continue
-
-        best_start, best_end = min(
-            normalized_spans,
-            key=lambda span: (span[0], -(span[1] - span[0])),
-        )
-        original_start = normalized_to_original_index[best_start]
-        original_end = normalized_to_original_index[best_end - 1] + 1
-        best_span = (original_start, original_end)
-
-        cached_results[text_word] = best_span
-        spans_for_words.append(best_span)
-
-    return spans_for_words
 
 class SubtitleFilterer:
-    def __init__(self, profanity_set):
+    def __init__(self, relative_char_widths):
         # Only english for now
         self.reader = easyocr.Reader(["en"])
         self.results = []
-        self.default_profanity_words = profanity_set
-        self.profanity_trie = Trie(words=self.default_profanity_words)
-
-    def _normalize_text_with_map(self, text):
-        normalized = []
-        index_map = []
-        for original_idx, ch in enumerate(text):
-            lower_ch = ch.lower()
-            if lower_ch.isalpha() or lower_ch == "*":
-                normalized.append(lower_ch)
-                index_map.append(original_idx)
-        return "".join(normalized), index_map
-
-    def _find_profanity_spans(self, text, trie):
-        normalized_text, normalized_to_original_index = self._normalize_text_with_map(text)
-        if not normalized_text:
-            return []
-
-        normalized_spans = trie.find_spans(normalized_text)
+        self.relative_char_widths = relative_char_widths
+    
+    # Function returns a list of spans as one "word" may contain multiple instances of profanity. E.g. "Yeahyeah" if "yeah" is
+    # considered profanity. This can happen as EasyOCR does not always neatly separate words.
+    def _find_profanity_span_per_word(
+        self,
+        profanity_word: str,
+        text_to_investigate: str,
+    ) -> list[tuple[int, int]]:
+        """
+        :return: List of tuples where each entry is measured in relative width of characters
+        """
+        prof_index = 0
+        current_x_estimate = 0
+        span_start = 0
         spans = []
-        for start, end in normalized_spans:
-            original_start = normalized_to_original_index[start]
-            original_end = normalized_to_original_index[end - 1] + 1
-            spans.append((original_start, original_end))
-
-        if not spans:
-            return []
-
-        spans.sort(key=lambda item: (item[0], -(item[1] - item[0])))
-        merged_spans = [spans[0]]
-        for span_start, span_end in spans[1:]:
-            last_start, last_end = merged_spans[-1]
-            if span_start <= last_end:
-                merged_spans[-1] = (last_start, max(last_end, span_end))
+        for char in text_to_investigate:
+            current_x_estimate += self.relative_char_widths[char]
+            if char == profanity_word[prof_index] or char == '*':
+                prof_index += 1
+                if prof_index == len(profanity_word):
+                    spans.append((span_start, current_x_estimate))
+                    span_start = current_x_estimate
+                    prof_index = 0
             else:
-                merged_spans.append((span_start, span_end))
+                prof_index = 0
+                span_start = current_x_estimate
 
-        return merged_spans
+        return spans
 
-    def _scale_box_to_text_span(self, box, full_image_offset, text, span):
+    def _scale_box_to_text_span(self, box, full_subtitle_offset, text, span):
         """
-        @param box: 4-tuple in the form x, y, w, h
-        @param full_image_offset: tuple in the form (offset_x, offset_y).
+        @param box: 4 corner coordinates in EasyOCR format:
+                    [top_left, top_right, bottom_right, bottom_left]
+        @param full_subtitle_offset: (x_offset, y_offset)  
         @param text: non-empty string that contains the text in the textbox
-        @param span: contains the start and end index of the swear word
+        @param span: contains the start and end of the swear word in terms of relative character width
         """
-        start_idx, end_idx = span
-        char_count = len(text)
+        SPAN_BOX_EXPANSION_RATIO = 0.10
+        x, y = full_subtitle_offset
+        start, end = span
+        total_rel_text_length = 0
+        for char in text:
+            total_rel_text_length += self.relative_char_widths[char]
 
-        x, y, w, h = box
+        start_ratio = start / total_rel_text_length
+        end_ratio = end / total_rel_text_length
 
-        newX = int(x + w * (start_idx / char_count))
-        newW = int(w * (end_idx + 1 - start_idx) / char_count)
+        span_width_ratio = end_ratio - start_ratio
+        pad_ratio = span_width_ratio * SPAN_BOX_EXPANSION_RATIO
+        expanded_start_ratio = max(0.0, start_ratio - pad_ratio)
+        expanded_end_ratio = min(1.0, end_ratio + pad_ratio)
 
-        return (newX, y, newW, h)
+        top_left, top_right, bottom_right, bottom_left = box
+
+        def _lerp(p1, p2, ratio):
+            return (
+                p1[0] + (p2[0] - p1[0]) * ratio,
+                p1[1] + (p2[1] - p1[1]) * ratio,
+            )
+
+        profanity_top_left = _lerp(top_left, top_right, expanded_start_ratio)
+        profanity_top_right = _lerp(top_left, top_right, expanded_end_ratio)
+        profanity_bottom_left = _lerp(bottom_left, bottom_right, expanded_start_ratio)
+        profanity_bottom_right = _lerp(bottom_left, bottom_right, expanded_end_ratio)
+
+        return [
+            (int(x + profanity_top_left[0]), int(y + profanity_top_left[1])),
+            (int(x + profanity_top_right[0]), int(y + profanity_top_right[1])),
+            (int(x + profanity_bottom_right[0]), int(y + profanity_bottom_right[1])),
+            (int(x + profanity_bottom_left[0]), int(y + profanity_bottom_left[1])),
+        ]
 
     def _run_easy_ocr_on_image(self, image):
         results = self.reader.readtext(image)
@@ -192,15 +92,15 @@ class SubtitleFilterer:
         ## Only run easy ocr on subtitle region
         self._run_easy_ocr_on_image(image[y: y+h, x: x+w])
 
-        profanity_trie = Trie(text_to_bleep)
-
         boxes = []
         for (box, text, _) in self.results:
-            ## Check if text contains profanity (or starred version)
-            spans = self._find_profanity_spans(text, profanity_trie)
-            for span in spans:
-                scaled_box = self._scale_box_to_text_span(box, (x, y), text, span)
-                if scaled_box is not None:
-                    boxes.append(scaled_box)
+            text = text.lower()
+            for word in text_to_bleep:
+                # Check if text contains profanity (or starred version)
+                spans = self._find_profanity_span_per_word(word, text)
+                for span in spans:
+                    scaled_box = self._scale_box_to_text_span(box, (x, y), text, span)
+                    if scaled_box is not None:
+                        boxes.append(scaled_box)
 
         return boxes
