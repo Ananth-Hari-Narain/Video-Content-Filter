@@ -1,9 +1,7 @@
 from pathlib import Path
 import subprocess
 import os
-from shutil import rmtree
 import json
-from json import JSONDecodeError
 import whisper
 import soundfile as sf
 import numpy as np
@@ -32,7 +30,7 @@ def censor_audio_from_video(video_path: str, profanity_set: set[str], output_fol
     bad_word_timestamps = _identify_profanity(transcription_path, profanity_set)
     new_audio_path = _apply_bleep_at_timestamps(audio_path, bad_word_timestamps, output_folder)
     cleanup_audio(Path(tmpdir))
-    return new_audio_path
+    return bad_word_timestamps, new_audio_path
 
 def _extract_from_video(video_path, output_file, sample_rate=16000):
     """
