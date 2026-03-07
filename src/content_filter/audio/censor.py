@@ -126,14 +126,10 @@ def cleanup_audio(temp_folder: Path):
     """
     Removes temporary files used for audio extraction process
     """
-    ## Check temp folder has word temp in it (mostly for testing, as real application, this should be deleted automatically)
-    if (temp_folder.name == "temp"):
-        keep_files = [
-            "transcription.json"
-        ]
+    keep_files = [
+        "transcription.json"
+    ]
 
-        for file_path in temp_folder.iterdir():
-            if file_path.is_file() and file_path.name not in keep_files:
-                file_path.unlink()
-    else:
-        raise FileNotFoundError(f"Folder you are trying to delete is named {temp_folder.name}. Are you sure you want to delete it?")
+    for file_path in temp_folder.iterdir():
+        if file_path.is_file() and file_path.name not in keep_files:
+            file_path.unlink()
