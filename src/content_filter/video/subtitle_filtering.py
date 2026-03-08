@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 from math import floor, ceil
 
-
 def _compute_edge_map(crop):
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
@@ -43,6 +42,7 @@ class _SubtitleFilterer:
         self.reader = easyocr.Reader(["en"])
         self.results = []
         self.relative_char_widths = relative_char_widths
+        self.num_ocr_calls = 0
     
     # Function returns a list of spans as one "word" may contain multiple instances of profanity. E.g. "Yeahyeah" if "yeah" is
     # considered profanity. This can happen as EasyOCR does not always neatly separate words.
@@ -118,6 +118,7 @@ class _SubtitleFilterer:
     def run_easy_ocr_on_image(self, image):
         results = self.reader.readtext(image)
         self.results = results
+        self.num_ocr_calls += 1
 
     def boxes_from_results(self, word, subtitle_offset):
         """
@@ -183,14 +184,19 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
 
     capture.set(cv2.CAP_PROP_POS_MSEC, timespans[0][1])  # Measured in ms
     timespan_index = 0  # Index of the earliest unconfirmed timespan
+    N = 6  # We only sample every N frames
+    frames_in_sequence = 0  # Used for frame skipping. A sequence is at most n frames
 
     # cache[timespan_index] = (word, quad_in_scaled_coords, ref_edge_map)
     cache = {}
 
     while (timespan_index < len(timespans) or cache) and capture.isOpened():
         ret, frame = capture.read()
-        if not ret:
-            break
+
+        frames_in_sequence = (frames_in_sequence + 1) % N
+        if frames_in_sequence != 0:
+            continue
+        
         current_pos_in_video = capture.get(cv2.CAP_PROP_POS_MSEC)
 
         scaled = cv2.resize(frame, (0, 0), fx=VIDEO_SCALE_FACTOR, fy=VIDEO_SCALE_FACTOR)
@@ -219,16 +225,16 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
                 cache_misses.append(cache_key)
 
         # Timespans that are active this frame and not yet found.
-        active_uncached = [
+        unfound_timestamps = [
             i for i in range(timespan_index, len(timespans))
             if not found_profanity_per_timestamp[i]
             and timespans[i][1] <= current_pos_in_video <= timespans[i][2]
             and i not in cache
         ]
 
-        # Run OCR at most once per frame, only when a cache miss or new active
-        # timespan requires it.
-        if cache_misses or active_uncached:
+        # Run OCR at most once per frame, only when a cache miss or active
+        # timespan requires it (active meaning we found it)
+        if cache_misses or unfound_timestamps:
             sub_crop = scaled[
                 scaled_sub[1]:scaled_sub[1] + scaled_sub[3],
                 scaled_sub[0]:scaled_sub[0] + scaled_sub[2],
@@ -244,7 +250,7 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
                 missed_by_word.setdefault(word, []).append(cache_key)
 
             uncached_by_word = {}
-            for i in active_uncached:
+            for i in unfound_timestamps:
                 word = timespans[i][0]
                 uncached_by_word.setdefault(word, []).append(i)
 
@@ -284,8 +290,7 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
         while timespan_index < len(timespans) and found_profanity_per_timestamp[timespan_index]:
             timespan_index += 1
 
-        # Seek optimisation: if cache is empty and we are between timespans,
-        # jump directly to the start of the next one.
+        # If cache is empty and we are between timespans, jump directly to the start of the next one.
         if not cache and timespan_index < len(timespans):
             next_start_ms = timespans[timespan_index][1]
             if current_pos_in_video < next_start_ms:
