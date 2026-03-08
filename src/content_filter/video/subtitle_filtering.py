@@ -305,4 +305,4 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
             bounding_quads.setdefault(frame_idx, []).extend(quads)
 
     capture.release()
-    return bounding_quads, fps, (orig_w, orig_h)
+    return bounding_quads, fps, (orig_w, orig_h), N
