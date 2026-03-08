@@ -58,7 +58,7 @@ def _transcribe_audio(audio_file, output_path, model_name="small"):
 
     tmp_output_path = f"{output_path}.tmp"
     with open(tmp_output_path, "w", encoding="utf-8") as file:
-        json.dump(transcription, file)
+        json.dump(transcription, file, indent=1)
     os.replace(tmp_output_path, output_path)
 
     return output_path
