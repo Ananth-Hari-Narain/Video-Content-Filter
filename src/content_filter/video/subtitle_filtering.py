@@ -175,9 +175,9 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
 
     for timestamp in bad_word_timestamps:
         # Multiplying by 1000 to convert to milliseconds from seconds
-        start = 1000 * floor(timestamp['start'] - AUDIO_TOLERANCE)
-        end = 1000 * ceil(timestamp['end'] + AUDIO_TOLERANCE)
-        timespans.append((timestamp['word'], start, end))
+        start = floor(1000 * (timestamp['start'] - AUDIO_TOLERANCE))
+        end = ceil(1000 * (timestamp['end'] + AUDIO_TOLERANCE))
+        timespans.append((clean_word(timestamp['word']), start, end))
 
     timespans.sort(key=lambda span: span[1])  # Sort by start times
     found_profanity_per_timestamp = [False] * len(timespans)
