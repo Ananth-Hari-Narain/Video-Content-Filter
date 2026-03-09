@@ -127,10 +127,10 @@ def cleanup_audio(temp_folder: Path):
     """
     Removes temporary files used for audio extraction process
     """
-    keep_files = [
-        "transcription.json"
+    remove_files = [
+        "extracted_audio.wav"
     ]
 
     for file_path in temp_folder.iterdir():
-        if file_path.is_file() and file_path.name not in keep_files:
+        if file_path.is_file() and file_path.name in remove_files:
             file_path.unlink()
