@@ -119,6 +119,7 @@ def _apply_bleep_at_timestamps(audio_file, bad_word_timestamps, output_folder):
     # Save output
     output_file = os.path.join(output_folder, "censored_audio.wav")
     sf.write(output_file, censored_audio, sample_rate)
+    return output_file
 
 
 # Not 'hidden' as I might need this if CLI needs to manually clean up.
