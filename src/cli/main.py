@@ -19,7 +19,7 @@ if __name__ == "__main__":
         print("No profanity detected: video unmodified")
     else:
         # Filtering the video
-        test_path = "/home/ananth/repos/video-content-filter/tmp/result.json"
+        test_path = "/home/ananth/repos/video-content-filter/src/tmp/results.json"
         print("Identifying profanity on screen...")
         if not os.path.exists(test_path):
             quad_map, fps, (w, h), n = get_bounding_quads(VIDEO_PATH, bad_word_timestamps, get_relative_character_widths())
@@ -58,8 +58,12 @@ if __name__ == "__main__":
 
         print("Video created! Combining video and audio...")
         # Combining the video and audio
-        command = f"ffmpeg -i {censored_video_path} -i {censored_audio_path} \
-  -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 {OUTPUT_PATH}".split()
+        final_output_path = os.path.join(OUTPUT_PATH, "censored.mp4")
+        command = ['ffmpeg', 
+                   '-i', censored_video_path, 
+                   '-i', censored_audio_path, 
+                   '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0', 
+                   final_output_path]
         subprocess.run(command, check=True)
-        print("Done! Video saved at: ", OUTPUT_PATH)
+        print("Done! Video saved at: ", final_output_path)
         
