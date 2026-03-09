@@ -167,7 +167,7 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
     orig_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     orig_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     bounding_quads = {}  #
-    AUDIO_TOLERANCE = 0.2   # Measured in ms
+    AUDIO_TOLERANCE = 0.2   # Measured in seconds
     VIDEO_SCALE_FACTOR = 0.63  # We will scale image down by this amount to improve performance
 
     # I am assuming sutitles are not printed one character at a time, as is generally the case
