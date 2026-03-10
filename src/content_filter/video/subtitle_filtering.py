@@ -2,6 +2,7 @@ import easyocr
 import cv2
 import numpy as np
 from math import floor, ceil
+from content_filter.utils import clean_word
 
 def _compute_edge_map(crop):
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
@@ -245,24 +246,26 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
             # miss_keys descending so the earliest timespan indices are dropped
             # first if OCR finds fewer boxes than expected.
             missed_by_word = {}
+            unique_words = set()
             for cache_key in cache_misses:
                 word = cache[cache_key][0]
                 missed_by_word.setdefault(word, []).append(cache_key)
+                unique_words.add(word)
 
             uncached_by_word = {}
             for i in unfound_timestamps:
                 word = timespans[i][0]
                 uncached_by_word.setdefault(word, []).append(i)
+                unique_words.add(word)
 
-            for word in set(missed_by_word) | set(uncached_by_word):
-                found = filterer.boxes_from_results(word, (sub_x, sub_y))
-                miss_keys = sorted(missed_by_word.get(word, []))
+            for word in unique_words:
+                available = list(filterer.boxes_from_results(word, (sub_x, sub_y)))
+                miss_keys = sorted(missed_by_word.get(word, [])) 
                 uncached_idxs = uncached_by_word.get(word, [])
 
                 for k in miss_keys:
                     del cache[k]
 
-                available = list(found)
                 for miss_key in miss_keys:
                     if not available:
                         break
