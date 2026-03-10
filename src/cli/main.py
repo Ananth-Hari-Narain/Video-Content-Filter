@@ -33,7 +33,7 @@ if __name__ == "__main__":
             fps = 30
             w = 1350
             h = 772
-            n = 6
+            n = 3
         
         censored_video_path = os.path.join(TMP_DIR, "out.mp4")
         
