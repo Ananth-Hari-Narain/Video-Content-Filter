@@ -6,12 +6,14 @@ import os.path
 import numpy as np
 import json
 import subprocess
+from pathlib import Path
 
 if __name__ == "__main__":
-    VIDEO_PATH = "/home/ananth/repos/video-content-filter/data/raw/example1.mp4"
-    PROFANITY_PATH = "/home/ananth/repos/video-content-filter/src/content_filter/config/profanity_words.txt"
-    TMP_DIR = "tmp"
-    OUTPUT_PATH = "/home/ananth/repos/video-content-filter/data/processed/"
+    PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    VIDEO_PATH = str(PROJECT_ROOT / "data/raw/example1.mp4")
+    PROFANITY_PATH = str(PROJECT_ROOT / "src/content_filter/config/profanity_words.txt")
+    OUTPUT_PATH = str(PROJECT_ROOT / "data/processed")
+    TMP_DIR = str(PROJECT_ROOT / "src/tmp")
     # Filter audio for transcription
     bad_word_timestamps, censored_audio_path = censor_audio_from_video(VIDEO_PATH, load_profanity(PROFANITY_PATH, TMP_DIR), OUTPUT_PATH, TMP_DIR)
     transcription_path = os.path.join(TMP_DIR, "transcription.json")
