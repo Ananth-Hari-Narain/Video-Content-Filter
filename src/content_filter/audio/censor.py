@@ -28,8 +28,29 @@ def censor_audio_from_video(video_path: str, profanity_set: set[str], output_fol
 
     # As this is a fairly fast process, we don't need the file "checkpoints" from before
     bad_word_timestamps = _identify_profanity(transcription_path, profanity_set)
-    new_audio_path = _apply_bleep_at_timestamps(audio_path, bad_word_timestamps, output_folder)
+    new_audio_path = _apply_bleep_at_timestamps(audio_path, bad_word_timestamps, output_folder=output_folder)
     cleanup_audio(Path(tmpdir))
+    return bad_word_timestamps, new_audio_path
+
+
+def censor_audio_file(audio_path: str, profanity_set: set[str], output_path: str | None = None, tmpdir="temp", debug_output_on: bool = True):
+    """
+    Censor profanity directly in an audio file.
+
+    Returns (bad_word_timestamps, output_audio_path).
+    """
+    create_new_file_if_missing(tmpdir, os.mkdir, tmpdir)
+
+    if debug_output_on:
+        print("Temp file created!")
+
+    transcription_path = os.path.join(tmpdir, "transcription.json")
+    create_new_file_if_missing(transcription_path, _transcribe_audio, audio_path, transcription_path)
+    if debug_output_on:
+        print("Transcription generated!")
+
+    bad_word_timestamps = _identify_profanity(transcription_path, profanity_set)
+    new_audio_path = _apply_bleep_at_timestamps(audio_path, bad_word_timestamps, output_path=output_path)
     return bad_word_timestamps, new_audio_path
 
 def _extract_from_video(video_path, output_file, sample_rate=16000):
@@ -81,7 +102,7 @@ def _identify_profanity(transcription_path, profanity_set):
 
     return profanities
 
-def _apply_bleep_at_timestamps(audio_file, bad_word_timestamps, output_folder):
+def _apply_bleep_at_timestamps(audio_file, bad_word_timestamps, output_folder=None, output_path=None):
     """
     Takes a list of timestamps and audio and applies a "bleep" sound effect to
     the audio.
@@ -117,7 +138,13 @@ def _apply_bleep_at_timestamps(audio_file, bad_word_timestamps, output_folder):
         censored_audio[start_sample:end_sample] = bleep
 
     # Save output
-    output_file = os.path.join(output_folder, "censored_audio.wav")
+    if output_path is not None:
+        output_file = output_path
+    elif output_folder is not None:
+        output_file = os.path.join(output_folder, "censored_audio.wav")
+    else:
+        raise ValueError("Either output_folder or output_path must be provided")
+
     sf.write(output_file, censored_audio, sample_rate)
     return output_file
 
