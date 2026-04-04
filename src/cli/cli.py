@@ -10,7 +10,7 @@ import numpy as np
 
 from content_filter.audio import censor_audio_file, censor_audio_from_video
 from content_filter.utils import get_relative_character_widths, load_profanity
-from content_filter.video import get_bounding_quads
+from content_filter.video import *
 
 
 def _default_profanity_path() -> str:
@@ -34,51 +34,6 @@ def _default_video_output_path(input_path: str, mode: str) -> str:
 
 def _ensure_parent(path: str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-
-
-def _remux_video_audio(video_path: str, audio_path: str, output_path: str) -> None:
-    command = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        video_path,
-        "-i",
-        audio_path,
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        output_path,
-    ]
-    subprocess.run(command, check=True)
-
-
-def _render_censored_video(video_path: str, censored_video_path: str, quad_map: dict, fps: float, width: int, height: int, n: int) -> None:
-    cap = cv2.VideoCapture(video_path)
-    out = cv2.VideoWriter(censored_video_path, cv2.VideoWriter.fourcc(*"mp4v"), fps, (width, height))
-
-    idx = 0
-    ordered_frames = sorted(int(frame_idx) for frame_idx in quad_map.keys())
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        for frame_idx in ordered_frames:
-            if frame_idx <= idx < frame_idx + n:
-                for quad in quad_map.get(frame_idx, []):
-                    cv2.fillConvexPoly(frame, np.array(quad, dtype=np.int32), (0, 0, 0))
-                break
-
-        out.write(frame)
-        idx += 1
-
-    cap.release()
-    out.release()
 
 
 def _run_filter_audio(args) -> int:
@@ -121,7 +76,7 @@ def _run_filter_video(args) -> int:
         )
 
         if args.mode == "audio-only" or not bad_word_timestamps:
-            _remux_video_audio(args.input, censored_audio_path, output_path)
+            remux_video_audio(args.input, censored_audio_path, output_path)
         else:
             quad_map, fps, (width, height), n = get_bounding_quads(
                 args.input,
@@ -131,8 +86,8 @@ def _run_filter_video(args) -> int:
             # get_bounding_quads returns int frame keys; keep ints for fast lookup.
             quad_map = {int(k): v for k, v in quad_map.items()}
             masked_video_path = os.path.join(tmpdir, "masked_video.mp4")
-            _render_censored_video(args.input, masked_video_path, quad_map, fps, width, height, n)
-            _remux_video_audio(masked_video_path, censored_audio_path, output_path)
+            render_censored_video(args.input, masked_video_path, quad_map, fps, width, height, n)
+            remux_video_audio(masked_video_path, censored_audio_path, output_path)
     finally:
         if should_cleanup_tmp and os.path.isdir(tmpdir):
             shutil.rmtree(tmpdir)
