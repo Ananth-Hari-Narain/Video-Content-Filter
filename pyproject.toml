@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-content-filter"
+version = "0.1.0"
+description = "CLI tool to censor profanity in audio and video files"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+video-content-filter = "cli.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
