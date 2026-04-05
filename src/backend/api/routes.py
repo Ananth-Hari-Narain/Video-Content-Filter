@@ -4,7 +4,7 @@ import mimetypes
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from cli import cli
 
@@ -62,7 +62,7 @@ def _normalize_mode(media_type: MediaType, mode: str | None) -> JobMode:
 async def create_job(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    mode: str | None = None,
+    mode: str | None = Form(default=None),
 ) -> JobCreateResponse:
     if job_store.has_active_job():
         raise HTTPException(
