@@ -30,7 +30,7 @@ type CompletedJob = {
   downloadUrl: string
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 const audioExt = new Set(['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg'])
 const videoExt = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm'])
@@ -64,14 +64,20 @@ async function createJob(file: File, mode: Mode): Promise<JobCreateResponse> {
   form.append('file', file)
   form.append('mode', mode)
 
-  const res = await fetch(`${API_BASE}/api/v1/jobs`, {
-    method: 'POST',
-    body: form,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}/api/v1/jobs`, {
+      method: 'POST',
+      body: form,
+    })
+  } catch {
+    throw new Error('Cannot reach backend API. Start FastAPI on http://127.0.0.1:8000.')
+  }
 
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}))
-    throw new Error(detail.detail || 'Unable to start filtering job.')
+    const reason = detail.detail || `Request failed (${res.status})`
+    throw new Error(`Unable to start filtering job: ${reason}`)
   }
 
   return (await res.json()) as JobCreateResponse
@@ -157,7 +163,7 @@ function App() {
     <main className="min-h-screen bg-[radial-gradient(1200px_500px_at_20%_-20%,#fecdd3,transparent),radial-gradient(1200px_500px_at_80%_120%,#bae6fd,transparent),#fff8f2] px-4 py-10 text-slate-900">
       <div className="mx-auto w-full max-w-3xl">
         <header className="mb-8">
-          <p className="mb-2 inline-flex rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-semibold tracking-[0.2em] text-amber-800">
+          <p className="mb-2 inline-flex rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xl font-semibold tracking-[0.2em] text-amber-800">
             VIDEO CONTENT FILTER
           </p>
           <h1 className="text-4xl font-black leading-tight md:text-5xl">
@@ -204,9 +210,9 @@ function App() {
 
         {isProcessing ? (
           <section className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-            <p className="text-xs font-semibold tracking-[0.3em] text-slate-500">JOB {currentJobId}</p>
-            <h2 className="mt-4 text-2xl font-black text-slate-900">filtering profanity</h2>
+            <h2 className="mt-4 text-2xl font-black text-slate-900">Filtering profanity</h2>
             <p className="mt-2 text-sm text-slate-600">This can take a little while for longer videos.</p>
+            <p className="text-xs mt-1 tracking-[0.2em] text-slate-500">JOB: {currentJobId}</p>
           </section>
         ) : (
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
