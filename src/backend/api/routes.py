@@ -36,10 +36,8 @@ def _detect_media_type(filename: str, content_type: str | None) -> MediaType:
     )
 
 
-def _normalize_mode(media_type: MediaType, mode: str | None) -> JobMode:
+def _normalize_mode(media_type: MediaType, mode: str) -> JobMode:
     if media_type == MediaType.audio:
-        if mode is None:
-            return JobMode.bleep
         if mode != JobMode.bleep.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -48,8 +46,6 @@ def _normalize_mode(media_type: MediaType, mode: str | None) -> JobMode:
         return JobMode.bleep
 
     # video
-    if mode is None:
-        return JobMode.audio_only
     if mode not in {JobMode.audio_only.value, JobMode.full.value}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,7 +58,7 @@ def _normalize_mode(media_type: MediaType, mode: str | None) -> JobMode:
 async def create_job(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    mode: str | None = Form(default=None),
+    mode: str = Form(...),
 ) -> JobCreateResponse:
     if job_store.has_active_job():
         raise HTTPException(
