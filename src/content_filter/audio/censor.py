@@ -2,10 +2,11 @@ from pathlib import Path
 import subprocess
 import os
 import json
-import whisper
+from faster_whisper import WhisperModel
 import soundfile as sf
 import numpy as np
 from content_filter.utils import *
+import dataclasses
 
 def censor_audio_from_video(video_path: str, profanity_set: set[str], output_folder: str, tmpdir="temp", debug_output_on: bool = True):
     # Create temporary directory
@@ -74,8 +75,16 @@ def _transcribe_audio(audio_file, output_path, model_name="small"):
     Use openai whisper to create transcription, storing it as a json.
     Returns path to json.
     """
-    model = whisper.load_model(model_name)
-    transcription = model.transcribe(audio_file, word_timestamps=True, verbose=False)
+    model = WhisperModel(model_name)
+    segments, _ = model.transcribe(audio_file, task="transcribe", word_timestamps=True)
+    transcription = {"segments": [
+        {
+            "start": segment.start, 
+            "end": segment.end, 
+            "text": segment.text, 
+            "words": [{"word": word.word, "start": word.start, "end": word.end} 
+                for word in (segment.words or [])]
+        } for segment in segments]}
 
     tmp_output_path = f"{output_path}.tmp"
     with open(tmp_output_path, "w", encoding="utf-8") as file:
