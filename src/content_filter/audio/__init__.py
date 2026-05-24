@@ -1,1 +1,1 @@
-from .censor import censor_audio_file, censor_audio_from_video, cleanup_audio
+from .censor import AudioCensorer
