@@ -98,7 +98,7 @@ def _run_filter_video(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="video-content-filter",
+        prog="vcf",
         description="Filter profanity from audio and video files.",
     )
 
