@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from content_filter.audio import censor_audio_file, censor_audio_from_video
+from content_filter.audio import AudioCensorer
 from content_filter.utils import get_relative_character_widths, load_profanity
 from content_filter.video import *
 
@@ -44,8 +44,9 @@ def _run_filter_audio(args) -> int:
     should_cleanup_tmp = not args.keep_temp
 
     try:
+        censorer = AudioCensorer()
         profanity_set = _load_default_profanity_set(tmpdir)
-        _, result_path = censor_audio_file(
+        _, result_path = censorer.censor_audio_file(
             audio_path=args.input,
             profanity_set=profanity_set,
             output_path=output_path,
@@ -67,8 +68,9 @@ def _run_filter_video(args) -> int:
     should_cleanup_tmp = not args.keep_temp
 
     try:
+        censorer = AudioCensorer()
         profanity_set = _load_default_profanity_set(tmpdir)
-        bad_word_timestamps, censored_audio_path = censor_audio_from_video(
+        bad_word_timestamps, censored_audio_path = censorer.censor_audio_from_video(
             video_path=args.input,
             profanity_set=profanity_set,
             output_folder=tmpdir,
@@ -98,7 +100,7 @@ def _run_filter_video(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="video-content-filter",
+        prog="vcf",
         description="Filter profanity from audio and video files.",
     )
 
