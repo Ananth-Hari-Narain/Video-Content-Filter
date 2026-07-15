@@ -44,7 +44,11 @@ def _run_filter_audio(args) -> int:
         tmpdir = tempfile.mkdtemp(prefix="video-content-filter-")
     else:
         tmpdir = "temp"
-        os.mkdir("temp")
+        if os.path.exists(tmpdir):
+            for entry in os.scandir(tmpdir):
+                shutil.rmtree(entry.path) if entry.is_dir() else os.remove(entry.path)
+        else:
+            os.mkdir(tmpdir)
 
     censorer = AudioCensorer()
     profanity_set = _load_default_profanity_set(tmpdir)
@@ -67,7 +71,11 @@ def _run_filter_video(args) -> int:
         tmpdir = tempfile.mkdtemp(prefix="video-content-filter-")
     else:
         tmpdir = "temp"
-        os.mkdir("temp")
+        if os.path.exists(tmpdir):
+            for entry in os.scandir(tmpdir):
+                shutil.rmtree(entry.path) if entry.is_dir() else os.remove(entry.path)
+        else:
+            os.mkdir(tmpdir)
 
     censorer = AudioCensorer()
     profanity_set = _load_default_profanity_set(tmpdir)
