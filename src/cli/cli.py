@@ -40,21 +40,20 @@ def _run_filter_audio(args) -> int:
     output_path = args.output or _default_audio_output_path(args.input)
     _ensure_parent(output_path)
 
-    tmpdir = tempfile.mkdtemp(prefix="video-content-filter-")
-    should_cleanup_tmp = not args.keep_temp
+    if not args.keep_temp:
+        tmpdir = tempfile.mkdtemp(prefix="video-content-filter-")
+    else:
+        tmpdir = "temp"
+        os.mkdir("temp")
 
-    try:
-        censorer = AudioCensorer()
-        profanity_set = _load_default_profanity_set(tmpdir)
-        _, result_path = censorer.censor_audio_file(
-            audio_path=args.input,
-            profanity_set=profanity_set,
-            output_path=output_path,
-            tmpdir=tmpdir,
-        )
-    finally:
-        if should_cleanup_tmp and os.path.isdir(tmpdir):
-            shutil.rmtree(tmpdir)
+    censorer = AudioCensorer()
+    profanity_set = _load_default_profanity_set(tmpdir)
+    _, result_path = censorer.censor_audio_file(
+        audio_path=args.input,
+        profanity_set=profanity_set,
+        output_path=output_path,
+        tmpdir=tmpdir,
+    )
 
     print("Done! Audio saved at:", result_path)
     return 0
@@ -64,35 +63,34 @@ def _run_filter_video(args) -> int:
     output_path = args.output or _default_video_output_path(args.input, args.mode)
     _ensure_parent(output_path)
 
-    tmpdir = tempfile.mkdtemp(prefix="video-content-filter-")
-    should_cleanup_tmp = not args.keep_temp
+    if not args.keep_temp:
+        tmpdir = tempfile.mkdtemp(prefix="video-content-filter-")
+    else:
+        tmpdir = "temp"
+        os.mkdir("temp")
 
-    try:
-        censorer = AudioCensorer()
-        profanity_set = _load_default_profanity_set(tmpdir)
-        bad_word_timestamps, censored_audio_path = censorer.censor_audio_from_video(
-            video_path=args.input,
-            profanity_set=profanity_set,
-            output_folder=tmpdir,
-            tmpdir=tmpdir,
+    censorer = AudioCensorer()
+    profanity_set = _load_default_profanity_set(tmpdir)
+    bad_word_timestamps, censored_audio_path = censorer.censor_audio_from_video(
+        video_path=args.input,
+        profanity_set=profanity_set,
+        output_folder=tmpdir,
+        tmpdir=tmpdir,
+    )
+
+    if args.mode == "audio-only" or not bad_word_timestamps:
+        remux_video_audio(args.input, censored_audio_path, output_path)
+    else:
+        quad_map, fps, (width, height), n = get_bounding_quads(
+            args.input,
+            bad_word_timestamps,
+            get_relative_character_widths(),
         )
-
-        if args.mode == "audio-only" or not bad_word_timestamps:
-            remux_video_audio(args.input, censored_audio_path, output_path)
-        else:
-            quad_map, fps, (width, height), n = get_bounding_quads(
-                args.input,
-                bad_word_timestamps,
-                get_relative_character_widths(),
-            )
-            # get_bounding_quads returns int frame keys; keep ints for fast lookup.
-            quad_map = {int(k): v for k, v in quad_map.items()}
-            masked_video_path = os.path.join(tmpdir, "masked_video.mp4")
-            render_censored_video(args.input, masked_video_path, quad_map, fps, width, height, n)
-            remux_video_audio(masked_video_path, censored_audio_path, output_path)
-    finally:
-        if should_cleanup_tmp and os.path.isdir(tmpdir):
-            shutil.rmtree(tmpdir)
+        # get_bounding_quads returns int frame keys; keep ints for fast lookup.
+        quad_map = {int(k): v for k, v in quad_map.items()}
+        masked_video_path = os.path.join(tmpdir, "masked_video.mp4")
+        render_censored_video(args.input, masked_video_path, quad_map, fps, width, height, n)
+        remux_video_audio(masked_video_path, censored_audio_path, output_path)
 
     print("Done! Video saved at:", output_path)
     return 0
