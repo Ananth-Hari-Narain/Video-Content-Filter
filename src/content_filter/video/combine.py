@@ -20,7 +20,7 @@ def remux_video_audio(video_path: str, audio_path: str, output_path: str) -> Non
         "1:a:0",
         output_path,
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def render_censored_video(video_path: str, censored_video_path: str, quad_map: dict, fps: float, width: int, height: int, n: int) -> None:

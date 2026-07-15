@@ -2,11 +2,14 @@ from pathlib import Path
 import subprocess
 import os
 import json
+import logging
 from faster_whisper import WhisperModel
 import soundfile as sf
 import numpy as np
 from content_filter.utils import *
 import dataclasses
+
+logging.getLogger("faster_whisper").setLevel(logging.WARNING)
 
 
 class AudioCensorer:
@@ -73,7 +76,7 @@ class AudioCensorer:
             output_file                # output file
         ]
 
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def __transcribe_audio(self, audio_file, output_path, model_name="small"):
         """
