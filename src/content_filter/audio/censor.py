@@ -15,6 +15,7 @@ logging.getLogger("faster_whisper").setLevel(logging.WARNING)
 class AudioCensorer:
     def __init__(self, model_name = "small") -> None:
         self.__model =  WhisperModel(model_name)
+        self.progress = 0
 
     def censor_audio_from_video(self, video_path: str, profanity_set: set[str], output_folder: str, tmpdir="temp", debug_output_on: bool = True):
         # Create temporary directory
@@ -84,15 +85,20 @@ class AudioCensorer:
         Returns path to json.
         """
         model = WhisperModel(model_name)
-        segments, _ = model.transcribe(audio_file, task="transcribe", word_timestamps=True)
-        transcription = {"segments": [
-            {
-                "start": segment.start, 
-                "end": segment.end, 
-                "text": segment.text, 
-                "words": [{"word": word.word, "start": word.start, "end": word.end} 
+        segments, info = model.transcribe(audio_file, task="transcribe", word_timestamps=True)
+
+        transcription = {"segments": []}
+        for segment in segments:
+            transcription["segments"].append({
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text,
+                "words": [{"word": word.word, "start": word.start, "end": word.end}
                     for word in (segment.words or [])]
-            } for segment in segments]}
+            })
+            self.progress = segment.end / info.duration
+            print(f"\rTranscribing: {self.progress:.0%} ", end="", flush=True)
+        print()
 
         tmp_output_path = f"{output_path}.tmp"
         with open(tmp_output_path, "w", encoding="utf-8") as file:
