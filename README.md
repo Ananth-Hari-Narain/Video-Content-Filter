@@ -12,14 +12,14 @@ pip install -e .
 Run command help:
 
 ```bash
-video-content-filter --help
+vcf --help
 ```
 
 ### Filter audio
 
 ```bash
-video-content-filter filter-audio input.wav
-video-content-filter filter-audio input.wav --output output.wav
+vcf filter-audio input.wav
+vcf filter-audio input.wav --output output.wav
 ```
 
 - Input: any audio file supported by the current pipeline
@@ -28,8 +28,8 @@ video-content-filter filter-audio input.wav --output output.wav
 ### Filter video
 
 ```bash
-video-content-filter filter-video input.mp4 --mode audio-only
-video-content-filter filter-video input.mp4 --mode full --output final.mp4
+vcf filter-video input.mp4 --mode audio-only
+vcf filter-video input.mp4 --mode full --output final.mp4
 ```
 
 - `--mode audio-only`: only censors spoken profanity in audio and keeps video pixels unchanged
@@ -42,7 +42,7 @@ Video output defaults (when omitted):
 Optional extraction of censored audio while filtering video:
 
 ```bash
-video-content-filter filter-video input.mp4 --mode full
-video-content-filter filter-video input.mp4 --mode audio-only
+vcf filter-video input.mp4 --mode full
+vcf filter-video input.mp4 --mode audio-only
 ```
 
