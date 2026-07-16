@@ -1,0 +1,10 @@
+.venv/
+.venv2/
+node_modules/
+src/frontend/dist/
+data/
+temp/
+tmp/
+notebooks/
+.git/
+requirements_backup.txt

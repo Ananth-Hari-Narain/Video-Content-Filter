@@ -30,7 +30,7 @@ type CompletedJob = {
   downloadUrl: string
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '')
 
 const audioExt = new Set(['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg'])
 const videoExt = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm'])
