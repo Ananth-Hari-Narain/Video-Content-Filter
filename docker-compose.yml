@@ -1,0 +1,15 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: src/frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
