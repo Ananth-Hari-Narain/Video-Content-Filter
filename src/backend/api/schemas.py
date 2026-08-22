@@ -1,39 +1,13 @@
 from enum import Enum
 from pydantic import BaseModel
+import mimetypes
 
-
-class JobStatus(str, Enum):
-    queued = "queued"
-    processing = "processing"
-    completed = "completed"
-    failed = "failed"
-
-
-class MediaType(str, Enum):
-    audio = "audio"
-    video = "video"
-
-
-class JobMode(str, Enum):
-    bleep = "bleep"
-    audio_only = "audio-only"
-    full = "full"
-
+class JobRequest(BaseModel):
+    fileName: str
+    filterSubtitles: bool = True
+    fileSize: int  # In bytes
+    fileType: str
 
 class JobCreateResponse(BaseModel):
-    job_id: str
-    status: JobStatus
-    media_type: MediaType
-    mode: JobMode
-    message: str
-
-
-class JobStatusResponse(BaseModel):
-    job_id: str
-    status: JobStatus
-    media_type: MediaType
-    mode: JobMode
-    message: str
-    filename: str
-    download_url: str | None = None
-    error: str | None = None
+    job_id: str  # Important if user closes their tab
+    upload_url: str  # Presigned URL to upload to R2 bucket
