@@ -16,6 +16,7 @@ import boto3
 from botocore.exceptions import ClientError
 from uuid import uuid4, UUID
 import redis
+import pika
 
 # Other
 from typing import Optional
@@ -43,11 +44,26 @@ r2 = boto3.client(
 	region_name="auto",
 )
 
+# Set up redis queue
 redis_temp_job_store_url = os.getenv("UPSTASH_REDIS_JOB_STORE_URL")
 if redis_temp_job_store_url is None:
 	raise Exception("UPSTASH_REDIS_JOB_STORE_URL not loaded from dotenv file")
 	
 redis_temp_job_store = redis.Redis.from_url(redis_temp_job_store_url)
+
+# Set up rabbitMQ
+rabbitmq_url = os.getenv("RABBITMQ_URL")
+if rabbitmq_url is None:
+	raise Exception("UPSTASH_REDIS_JOB_STORE_URL not loaded from dotenv file")
+
+rabbitmq_conn = pika.BlockingConnection(
+	pika.URLParameters(rabbitmq_url)
+)
+
+rabbitmq_channel = rabbitmq_conn.channel()
+job_queue_name = "jobs_queue"
+rabbitmq_channel.queue_declare(queue=job_queue_name, durable=True)
+
 
 def is_valid_filetype(type: str) -> tuple[int, str, str]:
 	"""
@@ -128,11 +144,10 @@ def create_job_request(job: JobRequest):
 			}
 		)
 
-		return { 
-			"status": 201,
-			"job_id": job_id,
-			"upload_url": upload_url,
-		}
+		return JobCreateResponse(
+			job_id=job_id,
+			upload_url=upload_url,
+		)
 	
 	except ClientError as _:
 		raise HTTPException(
@@ -146,6 +161,39 @@ async def confirm_upload_status(job_id: UUID):
 	"""
 	This route is used to allow the client to tell the server that the upload is complete, and can be put into a queue.
 	"""
-    # Get the download URL and job information from redis
+	# Get the download URL and job information from redis
+	presigned_url, filter_subtitles_raw = redis_temp_job_store.hmget(
+		str(job_id), ["presigned_url", "filterSubtitles"]
+	)
+
+	if presigned_url is None:
+		raise KeyError(f"No job found for job_id={job_id}")
+
+	# Check file is actually uploaded
+	try:
+		r2.head_object(Bucket=bucket_name, Key=job_id)
+	except ClientError as e:
+		if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+			raise HTTPException(
+				status_code=404,
+				detail=f"File for job {job_id} not found. Wait for the file to upload before trying again."
+			)
+	
+	if filter_subtitles_raw is None:
+		raise ValueError(f"Missing filterSubtitles field in temp job store for job_id={job_id}")
+
+	filter_subtitles = bool(filter_subtitles_raw)
+
 	# Upload job to RabbitMQ
+	rabbitmq_channel.basic_publish(
+		exchange="",
+		routing_key=job_queue_name,
+		body=QueuedJob(
+			job_id=job_id, 
+			download_url=str(presigned_url), 
+			filterSubtitles=filter_subtitles).model_dump_json()
+	)
+	
 	# Add job to Redis cache so workers can update it regularly.
+	
+	
