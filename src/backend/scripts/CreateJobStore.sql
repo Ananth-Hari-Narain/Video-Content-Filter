@@ -9,6 +9,7 @@ CREATE TABLE Job (
     stage TEXT NOT NULL,
     status job_status NOT NULL,
     download_link TEXT,
-    started_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    started_at TIMESTAMP,
     ended_at TIMESTAMP
 );
