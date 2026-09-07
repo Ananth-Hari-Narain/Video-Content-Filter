@@ -10,6 +10,7 @@ WORKDIR /app
 
 COPY pyproject.toml requirements.txt ./
 COPY src/ ./src/
+COPY src/content_filter/config/profanity_words.txt ./src/content_filter/config/profanity_words.txt
 
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir .
