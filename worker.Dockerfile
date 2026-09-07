@@ -10,6 +10,10 @@ WORKDIR /app
 
 COPY requirements-worker.txt ./
 RUN pip install --no-cache-dir -r requirements-worker.txt
+COPY src/content_filter/config/profanity_words.txt ./src/content_filter/config/profanity_words.txt
+
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir .
 
 # Pre-bake model weights so containers start without needing network access.
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small')"
