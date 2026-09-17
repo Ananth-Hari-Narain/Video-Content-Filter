@@ -1,3 +1,0 @@
-DROP TABLE IF EXISTS Job;
-
-DROP TYPE IF EXISTS job_status;
