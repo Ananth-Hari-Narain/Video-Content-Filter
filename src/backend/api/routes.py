@@ -17,6 +17,7 @@ from botocore.exceptions import ClientError
 from uuid import uuid4, UUID
 import redis
 import pika
+import psycopg
 
 # Other
 from typing import Optional
@@ -64,6 +65,9 @@ rabbitmq_channel = rabbitmq_conn.channel()
 job_queue_name = "jobs_queue"
 rabbitmq_channel.queue_declare(queue=job_queue_name, durable=True)
 
+db_connection_string = os.getenv("DATABASE_URL")
+if db_connection_string is None:
+	raise Exception("DATABASE_URL not loaded from dotenv file")
 
 def is_valid_filetype(type: str) -> tuple[int, str, str]:
 	"""
@@ -171,7 +175,9 @@ async def confirm_upload_status(job_id: UUID):
 
 	# Check file is actually uploaded
 	try:
-		r2.head_object(Bucket=bucket_name, Key=job_id)
+		head = r2.head_object(Bucket=bucket_name, Key=job_id)
+		file_size = head["ContentLength"] # bytes
+		file_type = head["ContentType"]
 	except ClientError as e:
 		if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
 			raise HTTPException(
@@ -193,7 +199,15 @@ async def confirm_upload_status(job_id: UUID):
 			download_url=str(presigned_url), 
 			filterSubtitles=filter_subtitles).model_dump_json()
 	)
-	
-	# Add job to Redis cache so workers can update it regularly.
-	
-	
+
+	# Add job to Postgre database. DB does two things: tracks progress and provides a log of all processed jobs	
+	assert db_connection_string is not None
+
+	with psycopg.connect(db_connection_string) as conn:
+		with conn.cursor() as cur:
+			cur.execute(
+				"INSERT INTO jobs (id, filter_subtitles, file_type, file_size, stage, status, created_at) " \
+				"VALUES (%s, %s, %s, %s, %s, %s, NOW())",
+				(str(job_id), filter_subtitles, file_type, file_size, "", "Queued")
+			)
+		conn.commit()
