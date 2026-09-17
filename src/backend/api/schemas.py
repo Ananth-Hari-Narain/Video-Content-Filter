@@ -14,3 +14,8 @@ class QueuedJob(BaseModel):
     job_id: UUID
     download_url: str
     filterSubtitles: bool
+
+class JobStatusResponse(BaseModel):
+    status: str
+    stage: str
+    percent: int

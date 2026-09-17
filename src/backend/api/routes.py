@@ -211,3 +211,27 @@ async def confirm_upload_status(job_id: UUID):
 				(str(job_id), filter_subtitles, file_type, file_size, "", "Queued")
 			)
 		conn.commit()
+
+@router.get("/job/{job_id}")
+def get_job_status(job_id: UUID) -> JobStatusResponse:
+	"""
+	Returns the current status, stage, and percent progress of a job from the Postgres database.
+	"""
+	assert db_connection_string is not None
+
+	with psycopg.connect(db_connection_string) as conn:
+		with conn.cursor() as cur:
+			cur.execute(
+				"SELECT status, stage, percent FROM job WHERE id = %s",
+				(str(job_id),)
+			)
+			row = cur.fetchone()
+
+	if row is None:
+		raise HTTPException(
+			status_code=404,
+			detail=f"No job found for job_id={job_id}"
+		)
+
+	status, stage, percent = row
+	return JobStatusResponse(status=status, stage=stage, percent=percent)
