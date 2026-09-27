@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID
+import redis
 
 
 @dataclass
@@ -14,10 +15,10 @@ class PendingJob:
 class JobCache:
     """Wraps the Redis-backed temporary store for jobs awaiting upload confirmation."""
 
-    def __init__(self, client):
+    def __init__(self, client: redis.Redis):
         self._client = client
 
-    def save_pending_job(self, job_id: UUID, presigned_url: str, filter_subtitles: bool) -> None:
+    def save_pending_job(self, job_id: UUID, presigned_url: str, filter_subtitles: bool, ttl: int) -> None:
         self._client.hset(
             name=str(job_id),
             mapping={
@@ -25,6 +26,8 @@ class JobCache:
                 "filterSubtitles": int(filter_subtitles),
             },
         )
+
+        self._client.expire(name=str(job_id), time=ttl)
 
     def get_pending_job(self, job_id: UUID) -> Optional[PendingJob]:
         presigned_url, filter_subtitles_raw = self._client.hmget(

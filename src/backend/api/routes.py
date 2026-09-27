@@ -112,6 +112,7 @@ def create_job_request(
 			job_id=job_id,
 			presigned_url=str(download_url),
 			filter_subtitles=job.filterSubtitles,
+			ttl=3600,
 		)
 
 		return JobCreateResponse(
