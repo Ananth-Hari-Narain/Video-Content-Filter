@@ -1,8 +1,3 @@
-"""TODO
-- GET, SET, DELETE with job storage
-- Upload to rabbitMQ
-"""
-
 from __future__ import annotations
 
 import re
