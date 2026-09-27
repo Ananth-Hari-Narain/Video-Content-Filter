@@ -1,9 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
+
+MAX_FILE_SIZE_BYTES = 10 * 1024**3  # 10 GiB
 
 class JobRequest(BaseModel):
     filterSubtitles: bool
-    fileSize: int  # In bytes
+    fileSize: int = Field(ge=1, le=MAX_FILE_SIZE_BYTES)  # In bytes
     fileType: str
 
 class JobCreateResponse(BaseModel):
