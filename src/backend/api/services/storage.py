@@ -17,7 +17,12 @@ class R2Storage:
         self._client = client
         self._bucket_name = bucket_name
 
-    def create_presigned_upload(self, job_id: UUID, content_type: str, max_file_size: int) -> dict:
+    def create_presigned_upload(
+        self,
+        job_id: UUID,
+        content_type: str,
+        max_file_size: int,
+    ) -> dict:
         return self._client.generate_presigned_post(
             Bucket=self._bucket_name,
             Key=str(job_id),
@@ -26,7 +31,6 @@ class R2Storage:
                 {"Content-Type": content_type},
                 ["content-length-range", 1, max_file_size],
             ],
-            ExpiresIn=3600,  # 1 hour to upload
         )
 
     def create_presigned_download(self, job_id: UUID) -> str:
