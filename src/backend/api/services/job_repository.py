@@ -27,9 +27,9 @@ class JobRepository:
     ) -> None:
         with self._connection.cursor() as cur:
             cur.execute(
-                "INSERT INTO jobs (id, filter_subtitles, file_type, file_size, stage, status, created_at) "
+                "INSERT INTO job (id, filter_subtitles, file_type, file_size, stage, status, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
-                (str(job_id), filter_subtitles, file_type, file_size, "", "Queued"),
+                (str(job_id), filter_subtitles, file_type, file_size, "", "queued"),
             )
         self._connection.commit()
 
