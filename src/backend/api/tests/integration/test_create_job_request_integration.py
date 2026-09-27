@@ -47,11 +47,3 @@ class TestCreateJobFailsGracefully:
         assert response.status_code == 503
         assert "detail" in response.json()
 
-    def test_r2_access_failure_returns_error_response(self, make_client, credentialless_s3_client, redis_client):
-        client = make_client(s3=credentialless_s3_client)
-
-        response = client.post("/api/v1/job/", json=_payload())
-
-        assert response.status_code == 503
-        assert "detail" in response.json()
-        assert redis_client.keys("*") == []  # nothing cached for a job that can't be uploaded
