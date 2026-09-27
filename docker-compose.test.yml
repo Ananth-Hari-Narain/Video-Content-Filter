@@ -1,0 +1,35 @@
+# Throwaway backing services for the integration tests (src/backend/api/tests/integration).
+# Ports are deliberately non-default so they don't clash with anything running locally.
+# The pytest fixtures start these automatically; tear down with:
+#   docker compose -f docker-compose.test.yml down -v
+name: vcf-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vcf
+      POSTGRES_PASSWORD: vcf
+      POSTGRES_DB: vcf
+    ports:
+      - "55432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "56379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    ports:
+      - "55672:5672"
+
+  # S3-compatible stand-in for Cloudflare R2.
+  # NOTE: S3Mock does not enforce presigned-POST policy conditions (size range, content-type,
+  # expiry) - see the comments in test_bucket_upload.py. minio/minio would enforce these but
+  # requires a Docker Hub login to pull; localstack/localstack now requires a paid license to
+  # even start. Swap this out if either of those stops being a blocker.
+  s3mock:
+    image: adobe/s3mock
+    ports:
+      - "59000:9090"
