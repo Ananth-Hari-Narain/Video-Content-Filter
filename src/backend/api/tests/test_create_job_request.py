@@ -3,10 +3,12 @@ from uuid import UUID
 
 import pytest
 
+from backend.api.schemas import MAX_FILE_SIZE_BYTES
+
 VALID_VIDEO_TYPE = "video/mp4"
 VALID_AUDIO_TYPE = "audio/mpeg"
 
-# Non audio/video mimetypes that are explicitly allow-listed in is_valid_filetype
+# Non audio/video mimetypes that are explicitly allowed
 EXCEPTION_MIME_TYPES = [
     "application/ogg",
     "application/mp4",
@@ -63,6 +65,33 @@ class TestFileTypeValidation:
         _stub_successful_storage(mock_storage)
 
         response = client.post("/api/v1/job/", json=_job_payload(mime_type))
+
+        assert response.status_code == 200
+
+
+class TestFileSizeValidation:
+    @pytest.mark.parametrize("file_size", [0, -1])
+    def test_rejects_file_size_below_one_byte(self, client, mock_storage, mock_job_cache, file_size):
+        response = client.post("/api/v1/job/", json=_job_payload(VALID_VIDEO_TYPE, file_size=file_size))
+
+        assert response.status_code == 422
+        mock_storage.create_presigned_upload.assert_not_called()
+        mock_job_cache.save_pending_job.assert_not_called()
+
+    def test_rejects_file_size_above_10gb(self, client, mock_storage, mock_job_cache):
+        response = client.post(
+            "/api/v1/job/", json=_job_payload(VALID_VIDEO_TYPE, file_size=MAX_FILE_SIZE_BYTES + 1)
+        )
+
+        assert response.status_code == 422
+        mock_storage.create_presigned_upload.assert_not_called()
+        mock_job_cache.save_pending_job.assert_not_called()
+
+    @pytest.mark.parametrize("file_size", [1, MAX_FILE_SIZE_BYTES])
+    def test_accepts_boundary_file_sizes(self, client, mock_storage, file_size):
+        _stub_successful_storage(mock_storage)
+
+        response = client.post("/api/v1/job/", json=_job_payload(VALID_VIDEO_TYPE, file_size=file_size))
 
         assert response.status_code == 200
 
