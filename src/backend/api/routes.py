@@ -151,22 +151,31 @@ async def confirm_upload_status(
 			)
 		raise
 
-	# Upload job to RabbitMQ
-	job_queue.publish(
-		QueuedJob(
-			job_id=job_id,
-			download_url=pending_job.presigned_url,
-			filterSubtitles=pending_job.filter_subtitles,
-		)
-	)
-
-	# Add job to Postgres database. DB does two things: tracks progress and provides a log of all processed jobs
-	job_repository.create_job(
+	# Add job to Postgres database before queueing so the worker always finds a row to update.
+	# DB does two things: tracks progress and provides a log of all processed jobs
+	inserted = job_repository.create_job(
 		job_id=job_id,
 		filter_subtitles=pending_job.filter_subtitles,
 		file_type=object_info.file_type,
 		file_size=object_info.file_size,
 	)
+	if not inserted:
+		# Already confirmed and queued by an earlier call
+		return
+
+	# Upload job to RabbitMQ
+	try:
+		job_queue.publish(
+			QueuedJob(
+				job_id=job_id,
+				download_url=pending_job.presigned_url,
+				filterSubtitles=pending_job.filter_subtitles,
+			)
+		)
+	except Exception:
+		# Remove the row so a client retry isn't mistaken for a duplicate confirmation
+		job_repository.delete_job(job_id)
+		raise
 
 
 @router.get("/job/{job_id}")
