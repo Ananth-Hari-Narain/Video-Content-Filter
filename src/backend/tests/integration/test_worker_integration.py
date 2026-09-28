@@ -30,7 +30,7 @@ class TestProcessJob:
 
         process_job(job, job_repository)
 
-        output_path = JOBS_DIR / str(job_id) / "output"
+        output_path = JOBS_DIR / str(job_id) / "output.mp4"
         assert output_path.exists()
         assert output_path.stat().st_size > 0
 
@@ -41,7 +41,7 @@ class TestProcessJob:
 
         process_job(job, job_repository)
 
-        output_path = JOBS_DIR / str(job_id) / "output"
+        output_path = JOBS_DIR / str(job_id) / "output.wav"
         assert output_path.exists()
         assert output_path.stat().st_size > 0
 

@@ -87,10 +87,11 @@ def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
     job_dir = JOBS_DIR / str(job.job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
     input_path = job_dir / "input"
-    output_path = job_dir / "output"
 
     download_job_file(job.download_url, input_path)
     probe_info = probe_file(input_path)
+    has_video = has_video_stream(probe_info)
+    output_path = job_dir / ("output.mp4" if has_video else "output.wav")
 
     last_write = None
 
@@ -106,7 +107,7 @@ def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
     run_filter_cli(
         input_path,
         output_path,
-        has_video_stream(probe_info),
+        has_video,
         job.filterSubtitles,
         on_progress=report_progress,
     )
