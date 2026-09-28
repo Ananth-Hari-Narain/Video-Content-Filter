@@ -23,7 +23,7 @@ def job_id():
 
 
 class TestProcessJob:
-    def test_video_job_runs_full_pipeline_and_writes_progress(self, db_conn, mp4_video, download_url, job_id):
+    def test_video_job_runs_full_pipeline(self, db_conn, mp4_video, download_url, job_id):
         job_repository = JobRepository(connection=db_conn)
         job_repository.create_job(job_id, filter_subtitles=False, file_type="video/mp4", file_size=mp4_video.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=download_url(mp4_video.name), filterSubtitles=False)
@@ -54,9 +54,7 @@ class TestProcessJob:
 
         record = job_repository.get_status(job_id)
         assert record is not None
-        # PROGRESS_UPDATE_INTERVAL_SECONDS is 30s, so a ~1s test clip may finish before any
-        # mid-run write lands - the row should still exist from create_job either way.
-        assert record.status in {"queued", "running"}
+        assert record.status == "running"
 
 
 class TestHandleMessage:

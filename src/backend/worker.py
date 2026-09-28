@@ -36,11 +36,7 @@ def download_job_file(download_url: str, destination) -> None:
 
 
 def probe_file(path) -> dict:
-    """Run ffprobe on the downloaded file to make sure it's a well-formed media file.
-
-    ffprobe will fail or hang on garbage/malicious input, so a clean, quick run with
-    at least one audio/video stream is treated as a proxy for "safe to process".
-    """
+    """Run ffprobe on the downloaded file to make sure it's a well-formed media file."""
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", str(path)],
         capture_output=True,
@@ -88,6 +84,7 @@ def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
     job_dir.mkdir(parents=True, exist_ok=True)
     input_path = job_dir / "input"
 
+    job_repository.update_progress(job.job_id, "downloading", 0, status="running")
     download_job_file(job.download_url, input_path)
     probe_info = probe_file(input_path)
     has_video = has_video_stream(probe_info)
