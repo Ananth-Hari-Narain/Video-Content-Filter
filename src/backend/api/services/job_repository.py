@@ -42,7 +42,7 @@ class JobRepository:
             cur.execute("DELETE FROM job WHERE id = %s", (str(job_id),))
         self._connection.commit()
 
-    def update_progress(self, job_id: UUID, stage: str, percent: int, status: str = "processing") -> None:
+    def update_progress(self, job_id: UUID, stage: str, percent: int, status: str = "running") -> None:
         with self._connection.cursor() as cur:
             cur.execute(
                 "UPDATE job SET status = %s, stage = %s, percent = %s WHERE id = %s",
@@ -53,7 +53,7 @@ class JobRepository:
     def get_status(self, job_id: UUID) -> Optional[JobStatusRecord]:
         with self._connection.cursor() as cur:
             cur.execute(
-                "SELECT status, stage, percent FROM jobs WHERE id = %s",
+                "SELECT status, stage, percent FROM job WHERE id = %s",
                 (str(job_id),),
             )
             row = cur.fetchone()
