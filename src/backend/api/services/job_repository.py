@@ -13,7 +13,7 @@ class JobStatusRecord:
 
 
 class JobRepository:
-    """Wraps Postgres reads/writes for job tracking. Table: `jobs`."""
+    """Wraps Postgres reads/writes for job tracking. Table: `job`."""
 
     def __init__(self, connection):
         self._connection = connection
@@ -30,6 +30,14 @@ class JobRepository:
                 "INSERT INTO job (id, filter_subtitles, file_type, file_size, stage, status, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
                 (str(job_id), filter_subtitles, file_type, file_size, "", "queued"),
+            )
+        self._connection.commit()
+
+    def update_progress(self, job_id: UUID, stage: str, percent: int, status: str = "processing") -> None:
+        with self._connection.cursor() as cur:
+            cur.execute(
+                "UPDATE job SET status = %s, stage = %s, percent = %s WHERE id = %s",
+                (status, stage, percent, str(job_id)),
             )
         self._connection.commit()
 
