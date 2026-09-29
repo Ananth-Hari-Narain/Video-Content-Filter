@@ -6,8 +6,6 @@ import threading
 
 import pytest
 
-pytest_plugins = ["backend.api.tests.integration.conftest"]
-
 needs_media_tools = pytest.mark.skipif(
     shutil.which("vcf") is None or shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="vcf/ffmpeg/ffprobe not installed",

@@ -5,7 +5,7 @@ import pytest
 
 from backend.api.services.job_cache import JobCache
 from backend.api.schemas import QueuedJob
-from backend.api.tests.integration.conftest import TEST_SETTINGS
+from .fixtures import TEST_SETTINGS
 
 pytestmark = pytest.mark.integration
 

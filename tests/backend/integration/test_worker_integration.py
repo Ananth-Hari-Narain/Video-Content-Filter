@@ -6,7 +6,7 @@ import pytest
 
 from backend.api.schemas import QueuedJob
 from backend.api.services.job_repository import JobRepository
-from backend.api.tests.integration.conftest import TEST_SETTINGS
+from tests.backend.integration.api.fixtures import TEST_SETTINGS
 from backend.config import JOBS_DIR
 from backend.worker import handle_message, process_job
 

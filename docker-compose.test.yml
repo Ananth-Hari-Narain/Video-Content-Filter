@@ -1,4 +1,4 @@
-# Throwaway backing services for the integration tests (src/backend/api/tests/integration).
+# Throwaway backing services for the integration tests (tests/backend/integration).
 # Ports are deliberately non-default so they don't clash with anything running locally.
 # The pytest fixtures start these automatically; tear down with:
 #   docker compose -f docker-compose.test.yml down -v
