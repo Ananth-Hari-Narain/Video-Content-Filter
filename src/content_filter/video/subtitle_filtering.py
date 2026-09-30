@@ -4,6 +4,8 @@ import numpy as np
 from math import floor, ceil
 from content_filter.utils import clean_word
 
+PROGRESS_STAGE = "censoring video"
+
 def _compute_edge_map(crop):
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
@@ -161,7 +163,7 @@ class _SubtitleFilterer:
         return boxes
     
 
-def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, subtitle_region = None):    
+def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, subtitle_region = None, on_progress = None):
     filterer = _SubtitleFilterer(relative_char_widths)
     capture = cv2.VideoCapture(video_path)
     fps = capture.get(cv2.CAP_PROP_FPS)
@@ -190,6 +192,10 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
 
     # cache[timespan_index] = (word, quad_in_scaled_coords, ref_edge_map)
     cache = {}
+
+    last_reported_percent = 0
+    if on_progress is not None:
+        on_progress(PROGRESS_STAGE, last_reported_percent)
 
     while (timespan_index < len(timespans) or cache) and capture.isOpened():
         ret, frame = capture.read()
@@ -292,6 +298,13 @@ def get_bounding_quads(video_path, bad_word_timestamps, relative_char_widths, su
         # Advance timespan_index past all confirmed/expired timespans.
         while timespan_index < len(timespans) and found_profanity_per_timestamp[timespan_index]:
             timespan_index += 1
+
+        # Progress is proportional to the number of timestamps resolved so far.
+        if on_progress is not None:
+            percent = round(100 * timespan_index / len(timespans))
+            if percent != last_reported_percent:
+                last_reported_percent = percent
+                on_progress(PROGRESS_STAGE, percent)
 
         # If cache is empty and we are between timespans, jump directly to the start of the next one.
         if not cache and timespan_index < len(timespans):

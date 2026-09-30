@@ -85,7 +85,8 @@ def _run_filter_video(args) -> int:
         else:
             os.mkdir(tmpdir)
 
-    censorer = AudioCensorer(on_progress=_progress_callback(args))
+    on_progress = _progress_callback(args)
+    censorer = AudioCensorer(on_progress=on_progress)
     profanity_set = _load_default_profanity_set(tmpdir)
     bad_word_timestamps, censored_audio_path = censorer.censor_audio_from_video(
         video_path=args.input,
@@ -101,6 +102,7 @@ def _run_filter_video(args) -> int:
             args.input,
             bad_word_timestamps,
             get_relative_character_widths(),
+            on_progress=on_progress,
         )
         # get_bounding_quads returns int frame keys; keep ints for fast lookup.
         quad_map = {int(k): v for k, v in quad_map.items()}

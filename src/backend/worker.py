@@ -1,9 +1,3 @@
-"""Worker process: pulls queued jobs from RabbitMQ and runs the filtering CLI on them.
-
-For now this does not touch the database or upload results anywhere - it just
-downloads the file, sanity-checks it with ffprobe, and runs `vcf` on it.
-"""
-
 from __future__ import annotations
 
 import json
@@ -91,14 +85,21 @@ def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
     output_path = job_dir / ("output.mp4" if has_video else "output.wav")
 
     last_write = None
+    last_stage = None
 
     def report_progress(stage: str, percent: int) -> None:
-        nonlocal last_write
+        nonlocal last_write, last_stage
         now = time.monotonic()
-        # Only update database occassionally to prevent db from getting hammered with writes
-        if last_write is not None and now - last_write < PROGRESS_UPDATE_INTERVAL_SECONDS:
+        # Only update database occassionally to prevent db from getting hammered with writes.
+        # A change of stage is always written so the transition is never lost.
+        if (
+            stage == last_stage
+            and last_write is not None
+            and now - last_write < PROGRESS_UPDATE_INTERVAL_SECONDS
+        ):
             return
         last_write = now
+        last_stage = stage
         job_repository.update_progress(job.job_id, stage, percent)
 
     run_filter_cli(
@@ -109,6 +110,7 @@ def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
         on_progress=report_progress,
     )
 
+    job_repository.update_progress(job.job_id, "completed", 100, status="done")
     logger.info("Job %s done, output at %s", job.job_id, output_path)
 
 

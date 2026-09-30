@@ -54,7 +54,8 @@ class TestProcessJob:
 
         record = job_repository.get_status(job_id)
         assert record is not None
-        assert record.status == "running"
+        assert record.status == "done"
+        assert record.percent == 100
 
 
 class TestHandleMessage:
