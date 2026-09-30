@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 import uuid
 
 import pika
@@ -81,3 +82,71 @@ class TestHandleMessage:
 
         # requeue=False, so the message is dropped rather than redelivered.
         assert rabbit_channel.basic_get(queue=TEST_SETTINGS.job_queue_name) == (None, None, None)
+
+
+MEDIA_DIR = Path(__file__).parent / "media"
+SWEARING_VIDEO = MEDIA_DIR / "swearing.mp4"
+CLEAN_VIDEO = MEDIA_DIR / "clean.mp4"
+
+
+def _needs_file(path: Path):
+    return pytest.mark.skipif(not path.exists(), reason=f"{path} not provided")
+
+
+@pytest.fixture
+def serve_media(media_dir, download_url):
+    """Copy a long test video next to the media server and return its URL."""
+    def _serve(source: Path) -> str:
+        shutil.copy(source, media_dir / source.name)
+        return download_url(source.name)
+
+    return _serve
+
+
+@pytest.fixture
+def recorded_progress(db_conn, monkeypatch):
+    """A real JobRepository whose update_progress calls are also recorded, with a short write interval."""
+    monkeypatch.setattr("backend.worker.PROGRESS_UPDATE_INTERVAL_SECONDS", 1)
+    repo = JobRepository(connection=db_conn)
+    calls = []
+    real = repo.update_progress
+
+    def spy(job_id, stage, percent, status="running"):
+        calls.append((stage, percent, status))
+        real(job_id, stage, percent, status=status)
+
+    repo.update_progress = spy
+    return repo, calls
+
+
+class TestPeriodicProgressUpdates:
+    @_needs_file(SWEARING_VIDEO)
+    def test_subtitle_filtering_writes_progress_periodically(self, recorded_progress, serve_media, job_id):
+        repo, calls = recorded_progress
+        repo.create_job(job_id, filter_subtitles=True, file_type="video/mp4", file_size=SWEARING_VIDEO.stat().st_size)
+        job = QueuedJob(job_id=job_id, download_url=serve_media(SWEARING_VIDEO), filterSubtitles=True)
+
+        process_job(job, repo)
+
+        running = [(stage, percent) for stage, percent, status in calls if status == "running"]
+        assert len({percent for stage, percent in running if stage == "transcribe"}) > 1
+        censoring = [percent for stage, percent in running if stage == "censoring video"]
+        assert len(censoring) > 1, "expected several writes during the video filtering phase"
+        assert censoring == sorted(censoring), "progress must not go backwards"
+
+        stages = [stage for stage, _, _ in calls]
+        assert stages.index("transcribe") < stages.index("censoring video") < stages.index("completed")
+        assert calls[-1] == ("completed", 100, "done")
+
+        record = repo.get_status(job_id)
+        assert (record.status, record.stage, record.percent) == ("done", "completed", 100)
+
+    @_needs_file(CLEAN_VIDEO)
+    def test_video_without_swearing_works(self, recorded_progress, serve_media, job_id):
+        repo, calls = recorded_progress
+        repo.create_job(job_id, filter_subtitles=True, file_type="video/mp4", file_size=CLEAN_VIDEO.stat().st_size)
+        job = QueuedJob(job_id=job_id, download_url=serve_media(CLEAN_VIDEO), filterSubtitles=True)
+
+        process_job(job, repo)
+
+        assert calls[-1] == ("completed", 100, "done")
