@@ -3,7 +3,7 @@ from uuid import uuid4
 from botocore.exceptions import ClientError
 
 from backend.api.services.job_cache import PendingJob
-from backend.api.services.storage import UploadedObjectInfo
+from backend.api.services.storage import ObjectInfo
 
 
 def _client_error(code: str) -> ClientError:
@@ -69,7 +69,7 @@ class TestSuccessfulConfirmation:
         mock_job_cache.get_pending_job.return_value = PendingJob(
             presigned_url=presigned_url, filter_subtitles=True
         )
-        mock_storage.get_uploaded_object_info.return_value = UploadedObjectInfo(
+        mock_storage.get_uploaded_object_info.return_value = ObjectInfo(
             file_size=2048, file_type="video/mp4"
         )
 
@@ -89,7 +89,7 @@ class TestSuccessfulConfirmation:
         mock_job_cache.get_pending_job.return_value = PendingJob(
             presigned_url="https://download.example/signed", filter_subtitles=False
         )
-        mock_storage.get_uploaded_object_info.return_value = UploadedObjectInfo(
+        mock_storage.get_uploaded_object_info.return_value = ObjectInfo(
             file_size=4096, file_type="audio/mpeg"
         )
 

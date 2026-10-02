@@ -5,7 +5,7 @@ from uuid import UUID
 
 
 @dataclass
-class UploadedObjectInfo:
+class ObjectInfo:
     file_size: int
     file_type: str
 
@@ -39,6 +39,6 @@ class R2Storage:
             Params={"Bucket": self._bucket_name, "Key": str(job_id)},
         )
 
-    def get_uploaded_object_info(self, job_id: UUID) -> UploadedObjectInfo:
+    def get_uploaded_object_info(self, job_id: UUID) -> ObjectInfo:
         head = self._client.head_object(Bucket=self._bucket_name, Key=str(job_id))
-        return UploadedObjectInfo(file_size=head["ContentLength"], file_type=head["ContentType"])
+        return ObjectInfo(file_size=head["ContentLength"], file_type=head["ContentType"])
