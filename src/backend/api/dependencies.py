@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Iterator
 
 import boto3
+from botocore.config import Config
 import pika
 from pika.adapters.blocking_connection import BlockingChannel
 import psycopg
@@ -26,6 +27,11 @@ def get_r2_client():
         aws_access_key_id=settings.r2_access_key_id,
         aws_secret_access_key=settings.r2_secret_access_key,
         region_name="auto",
+        # Recent boto3 adds CRC32 checksums by default, which R2 mishandles on multipart uploads
+        config=Config(
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
 
 

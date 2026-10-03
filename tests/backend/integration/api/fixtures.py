@@ -59,6 +59,9 @@ _FAST_FAIL_S3_CONFIG = Config(
     s3={"addressing_style": "path"},
     connect_timeout=1,
     retries={"max_attempts": 1},
+    # Recent boto3 adds CRC32 checksums by default, which S3-compatible backends (S3Mock, R2) mishandle on multipart uploads
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
 )
 
 
