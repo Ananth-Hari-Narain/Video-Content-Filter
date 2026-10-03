@@ -12,6 +12,8 @@ import requests
 
 from backend.api.schemas import QueuedJob
 from backend.api.services.job_repository import JobRepository
+from backend.api.dependencies import get_r2_client
+from backend.api.services.storage import R2Storage
 from backend.api.settings import load_settings
 from backend.config import JOBS_DIR
 
@@ -23,7 +25,7 @@ def download_job_file(download_url: str, destination) -> None:
     response = requests.get(download_url, stream=True, timeout=30)
     response.raise_for_status()
     with open(destination, "wb") as f:
-        # Write to disk megabyte in 10 MiB chunksinstead of buffering to memory directly
+        # Write to disk megabyte in 10 MiB chunks instead of buffering to memory directly
         # Important for large files
         for chunk in response.iter_content(chunk_size=10 * MiB):
             f.write(chunk)
@@ -73,7 +75,7 @@ def run_filter_cli(input_path, output_path, has_video: bool, filter_subtitles: b
         raise subprocess.CalledProcessError(process.returncode, command)
 
 
-def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
+def process_job(job: QueuedJob, job_repository: JobRepository, storage: R2Storage) -> None:
     job_dir = JOBS_DIR / str(job.job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
     input_path = job_dir / "input"
@@ -110,15 +112,18 @@ def process_job(job: QueuedJob, job_repository: JobRepository) -> None:
         on_progress=report_progress,
     )
 
-    job_repository.update_progress(job.job_id, "completed", 100, status="done")
-    logger.info("Job %s done, output at %s", job.job_id, output_path)
+    job_repository.update_progress(job.job_id, "uploading", 100)
+    download_link = storage.upload_output(job.job_id, output_path)
+
+    job_repository.update_progress(job.job_id, "completed", 100, status="done", download_link=download_link)
+    logger.info("Job %s done, output uploaded as %s", job.job_id, storage.output_key(job.job_id))
 
 
-def handle_message(channel, method, properties, body, job_repository: JobRepository) -> None:
+def handle_message(channel, method, properties, body, job_repository: JobRepository, storage: R2Storage) -> None:
     try:
         job = QueuedJob.model_validate_json(body)
         logger.info("Picked up job %s", job.job_id)
-        process_job(job, job_repository)
+        process_job(job, job_repository, storage)
         channel.basic_ack(delivery_tag=method.delivery_tag)
     except Exception:
         logger.exception("Failed to process job")
@@ -131,6 +136,7 @@ def main() -> None:
 
     db_connection = psycopg.connect(settings.database_url)
     job_repository = JobRepository(connection=db_connection)
+    storage = R2Storage(client=get_r2_client(), bucket_name=settings.bucket_name)
 
     connection = pika.BlockingConnection(pika.URLParameters(settings.rabbitmq_url))
     channel = connection.channel()
@@ -138,7 +144,7 @@ def main() -> None:
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(
         queue=settings.job_queue_name,
-        on_message_callback=partial(handle_message, job_repository=job_repository),
+        on_message_callback=partial(handle_message, job_repository=job_repository, storage=storage),
     )
 
     logger.info("Worker started, waiting for jobs on %s", settings.job_queue_name)

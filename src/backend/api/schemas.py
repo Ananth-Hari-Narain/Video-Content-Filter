@@ -21,3 +21,4 @@ class JobStatusResponse(BaseModel):
     status: str
     stage: str
     percent: int
+    download_link: str = ""  # Empty string indicates nothing to download

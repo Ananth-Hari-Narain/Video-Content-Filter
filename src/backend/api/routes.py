@@ -15,7 +15,7 @@ from backend.api.dependencies import (
 	get_rabbitmq_channel,
 	get_db_connection,
 )
-from backend.api.services.storage import R2Storage
+from backend.api.services.storage import ObjectInfo, R2Storage
 from backend.api.services.job_cache import JobCache
 from backend.api.services.job_queue import JobQueue
 from backend.api.services.job_repository import JobRepository
@@ -100,7 +100,7 @@ def create_job_request(
 
 	try:
 		job_id = uuid4()
-		upload_url = storage.create_presigned_upload(job_id, base_type, job.fileSize)
+		upload_url = storage.create_presigned_upload(job_id, ObjectInfo(file_type=base_type, file_size=job.fileSize))
 		download_url = storage.create_presigned_download(job_id)
 
 		job_cache.save_pending_job(
@@ -194,4 +194,4 @@ def get_job_status(
 			detail=f"No job found for job_id={job_id}",
 		)
 
-	return JobStatusResponse(status=record.status, stage=record.stage, percent=record.percent)
+	return record
