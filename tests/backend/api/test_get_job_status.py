@@ -1,12 +1,12 @@
 from uuid import uuid4
 
-from backend.api.services.job_repository import JobStatusRecord
+from backend.api.schemas import JobStatusResponse
 
 
 class TestJobExists:
     def test_returns_status_from_repository(self, client, mock_job_repository):
         job_id = uuid4()
-        mock_job_repository.get_status.return_value = JobStatusRecord(
+        mock_job_repository.get_status.return_value = JobStatusResponse(
             status="Processing", stage="filtering_audio", percent=42
         )
 
@@ -17,6 +17,7 @@ class TestJobExists:
             "status": "Processing",
             "stage": "filtering_audio",
             "percent": 42,
+            "download_link": "",
         }
         mock_job_repository.get_status.assert_called_once_with(job_id)
 

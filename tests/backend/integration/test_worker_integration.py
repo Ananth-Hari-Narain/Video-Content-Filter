@@ -24,34 +24,34 @@ def job_id():
 
 
 class TestProcessJob:
-    def test_video_job_runs_full_pipeline(self, db_conn, mp4_video, download_url, job_id):
+    def test_video_job_runs_full_pipeline(self, db_conn, storage, mp4_video, download_url, job_id):
         job_repository = JobRepository(connection=db_conn)
         job_repository.create_job(job_id, filter_subtitles=False, file_type="video/mp4", file_size=mp4_video.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=download_url(mp4_video.name), filterSubtitles=False)
 
-        process_job(job, job_repository)
+        process_job(job, job_repository, storage)
 
         output_path = JOBS_DIR / str(job_id) / "output.mp4"
         assert output_path.exists()
         assert output_path.stat().st_size > 0
 
-    def test_audio_job_runs_full_pipeline(self, db_conn, mp3_audio, download_url, job_id):
+    def test_audio_job_runs_full_pipeline(self, db_conn, storage, mp3_audio, download_url, job_id):
         job_repository = JobRepository(connection=db_conn)
         job_repository.create_job(job_id, filter_subtitles=False, file_type="audio/mp3", file_size=mp3_audio.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=download_url(mp3_audio.name), filterSubtitles=False)
 
-        process_job(job, job_repository)
+        process_job(job, job_repository, storage)
 
         output_path = JOBS_DIR / str(job_id) / "output.wav"
         assert output_path.exists()
         assert output_path.stat().st_size > 0
 
-    def test_progress_updates_are_written_to_the_db(self, db_conn, mp4_video, download_url, job_id):
+    def test_progress_updates_are_written_to_the_db(self, db_conn, storage, mp4_video, download_url, job_id):
         job_repository = JobRepository(connection=db_conn)
         job_repository.create_job(job_id, filter_subtitles=False, file_type="video/mp4", file_size=mp4_video.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=download_url(mp4_video.name), filterSubtitles=False)
 
-        process_job(job, job_repository)
+        process_job(job, job_repository, storage)
 
         record = job_repository.get_status(job_id)
         assert record is not None
@@ -60,25 +60,25 @@ class TestProcessJob:
 
 
 class TestHandleMessage:
-    def test_acks_the_message_on_success(self, db_conn, rabbit_channel, mp4_video, download_url, job_id):
+    def test_acks_the_message_on_success(self, db_conn, storage, rabbit_channel, mp4_video, download_url, job_id):
         job_repository = JobRepository(connection=db_conn)
         job_repository.create_job(job_id, filter_subtitles=False, file_type="video/mp4", file_size=mp4_video.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=download_url(mp4_video.name), filterSubtitles=False)
         rabbit_channel.basic_publish(exchange="", routing_key=TEST_SETTINGS.job_queue_name, body=job.model_dump_json())
 
         method, properties, body = rabbit_channel.basic_get(queue=TEST_SETTINGS.job_queue_name)
-        handle_message(rabbit_channel, method, properties, body, job_repository=job_repository)
+        handle_message(rabbit_channel, method, properties, body, job_repository=job_repository, storage=storage)
 
         assert rabbit_channel.basic_get(queue=TEST_SETTINGS.job_queue_name) == (None, None, None)
 
-    def test_nacks_without_requeue_when_processing_fails(self, db_conn, rabbit_channel, job_id, download_url):
+    def test_nacks_without_requeue_when_processing_fails(self, db_conn, storage, rabbit_channel, job_id, download_url):
         job_repository = JobRepository(connection=db_conn)
         # No file at this URL - download_job_file will raise, and process_job should propagate.
         job = QueuedJob(job_id=job_id, download_url=download_url("does-not-exist.mp4"), filterSubtitles=False)
         rabbit_channel.basic_publish(exchange="", routing_key=TEST_SETTINGS.job_queue_name, body=job.model_dump_json())
 
         method, properties, body = rabbit_channel.basic_get(queue=TEST_SETTINGS.job_queue_name)
-        handle_message(rabbit_channel, method, properties, body, job_repository=job_repository)
+        handle_message(rabbit_channel, method, properties, body, job_repository=job_repository, storage=storage)
 
         # requeue=False, so the message is dropped rather than redelivered.
         assert rabbit_channel.basic_get(queue=TEST_SETTINGS.job_queue_name) == (None, None, None)
@@ -111,9 +111,9 @@ def recorded_progress(db_conn, monkeypatch):
     calls = []
     real = repo.update_progress
 
-    def spy(job_id, stage, percent, status="running"):
+    def spy(job_id, stage, percent, status="running", download_link=""):
         calls.append((stage, percent, status))
-        real(job_id, stage, percent, status=status)
+        real(job_id, stage, percent, status=status, download_link=download_link)
 
     repo.update_progress = spy
     return repo, calls
@@ -121,12 +121,12 @@ def recorded_progress(db_conn, monkeypatch):
 
 class TestPeriodicProgressUpdates:
     @_needs_file(SWEARING_VIDEO)
-    def test_subtitle_filtering_writes_progress_periodically(self, recorded_progress, serve_media, job_id):
+    def test_subtitle_filtering_writes_progress_periodically(self, recorded_progress, storage, serve_media, job_id):
         repo, calls = recorded_progress
         repo.create_job(job_id, filter_subtitles=True, file_type="video/mp4", file_size=SWEARING_VIDEO.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=serve_media(SWEARING_VIDEO), filterSubtitles=True)
 
-        process_job(job, repo)
+        process_job(job, repo, storage)
 
         running = [(stage, percent) for stage, percent, status in calls if status == "running"]
         assert len({percent for stage, percent in running if stage == "transcribe"}) > 1
@@ -142,11 +142,11 @@ class TestPeriodicProgressUpdates:
         assert (record.status, record.stage, record.percent) == ("done", "completed", 100)
 
     @_needs_file(CLEAN_VIDEO)
-    def test_video_without_swearing_works(self, recorded_progress, serve_media, job_id):
+    def test_video_without_swearing_works(self, recorded_progress, storage, serve_media, job_id):
         repo, calls = recorded_progress
         repo.create_job(job_id, filter_subtitles=True, file_type="video/mp4", file_size=CLEAN_VIDEO.stat().st_size)
         job = QueuedJob(job_id=job_id, download_url=serve_media(CLEAN_VIDEO), filterSubtitles=True)
 
-        process_job(job, repo)
+        process_job(job, repo, storage)
 
         assert calls[-1] == ("completed", 100, "done")
