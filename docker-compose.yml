@@ -1,10 +1,43 @@
 services:
+  # Local-only broker; in prod RABBITMQ_URL comes from file.env and this service goes away.
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: vcf
+      RABBITMQ_DEFAULT_PASS: vcf
+    ports:
+      - "5672:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      retries: 36 # rabbitmq can take >60s to boot under WSL
+
   backend:
     build:
       context: .
-      dockerfile: docker/backend.Dockerfile
+      dockerfile: api.Dockerfile
+    env_file: src/backend/file.env
+    environment:
+      RABBITMQ_URL: amqp://vcf:vcf@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     expose:
       - "8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker.Dockerfile
+    env_file: src/backend/file.env
+    environment:
+      RABBITMQ_URL: amqp://vcf:vcf@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+    deploy:
+      replicas: 2
 
   frontend:
     build:

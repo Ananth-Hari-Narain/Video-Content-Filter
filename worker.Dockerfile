@@ -8,18 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY pyproject.toml requirements.txt ./
-COPY src/ ./src/
-
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir .
+COPY requirements-worker.txt ./
+RUN pip install --no-cache-dir -r requirements-worker.txt
 
 # Pre-bake model weights so containers start without needing network access.
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small')"
 RUN python -c "import easyocr; easyocr.Reader(['en'])"
 
+COPY pyproject.toml ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir --no-deps .
+
 ENV PYTHONPATH=/app/src
 
-EXPOSE 8000
-
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "backend.worker"]
