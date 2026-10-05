@@ -23,28 +23,15 @@ class R2Storage:
         job_id: UUID,
         file_info: Optional[ObjectInfo] = None,
         expires_in: int = 3600,
-    ) -> dict:
+    ) -> str:
         """
-        Leaving file_info as None means generating a presigned_url without POST policy conditions, which is important
-        if the program is using S3 or R2 buckets. It is also important if
+        Presigned PUT URL. R2 does not support presigned POST, so there are no POST policy conditions (size range):
+        only the Content-Type is signed. Hence, file_info.file_size is unused.
         """
+        params = {"Bucket": self._bucket_name, "Key": str(job_id)}
         if file_info:
-            return self._client.generate_presigned_post(
-                Bucket=self._bucket_name,
-                Key=str(job_id),
-                Fields={"Content-Type": file_info.file_type},
-                Conditions=[
-                    {"Content-Type": file_info.file_type},
-                    ["content-length-range", 1, file_info.file_size],
-                ],
-                ExpiresIn=expires_in,
-            )
-        else:
-            return self._client.generate_presigned_post(
-                Bucket=self._bucket_name,
-                Key=str(job_id),
-                ExpiresIn=expires_in,
-            )
+            params["ContentType"] = file_info.file_type
+        return self._client.generate_presigned_url("put_object", Params=params, ExpiresIn=expires_in)
 
     def create_presigned_download(self, job_id: UUID, expires_in: int = 3600, key: Optional[str] = None) -> str:
         return self._client.generate_presigned_url(

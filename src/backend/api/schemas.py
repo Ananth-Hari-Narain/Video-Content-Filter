@@ -9,8 +9,8 @@ class JobRequest(BaseModel):
     fileType: str
 
 class JobCreateResponse(BaseModel):
-    job_id: UUID  # Important if user closes their tab
-    upload_url: dict  # Presigned URL to upload to R2 bucket
+    job_id: UUID
+    upload_url: str  # Presigned PUT URL to upload to R2 bucket
 
 class QueuedJob(BaseModel):
     job_id: UUID

@@ -1,4 +1,4 @@
-"""Uploads straight to the bucket using the presigned POST from R2Storage (not via any API route)."""
+"""Uploads straight to the bucket using the presigned PUT URL from R2Storage (not via any API route)."""
 
 import time
 from uuid import uuid4
@@ -15,10 +15,9 @@ CONTENT_TYPE = "video/mp4"
 MAX_SIZE = 1024
 
 
-def _upload(presigned: dict, body: bytes, content_type: str = CONTENT_TYPE) -> httpx.Response:
-    """POST `body` to the presigned form. `content_type` overrides the signed Content-Type form field."""
-    fields = {**presigned["fields"], "Content-Type": content_type}
-    return httpx.post(presigned["url"], data=fields, files={"file": ("upload", body, content_type)})
+def _upload(presigned: str, body: bytes, content_type: str = CONTENT_TYPE) -> httpx.Response:
+    """PUT `body` to the presigned URL. `content_type` overrides the signed Content-Type header."""
+    return httpx.put(presigned, content=body, headers={"Content-Type": content_type})
 
 
 def _object_exists(s3_client, bucket: str, job_id) -> bool:
@@ -37,7 +36,7 @@ def job_id():
 
 
 @pytest.fixture
-def presigned(storage, job_id) -> dict:
+def presigned(storage, job_id) -> str:
     return storage.create_presigned_upload(job_id, ObjectInfo(file_type=CONTENT_TYPE, file_size=MAX_SIZE))
 
 
@@ -56,37 +55,3 @@ class TestUploadSucceeds:
         info = storage.get_uploaded_object_info(job_id)
         assert info.file_size == MAX_SIZE
         assert info.file_type == CONTENT_TYPE
-
-
-# NOTE: S3Mock (the local stand-in for R2 used here) does not enforce presigned-POST policy
-# conditions - the size range and content-type match
-@pytest.mark.skip(reason="S3Mock does not enforce presigned-POST conditions - see module note")
-class TestUploadRejected:
-    def test_file_one_byte_over_max_length(self, presigned, s3_client, storage, job_id):
-        response = _upload(presigned, b"x" * (MAX_SIZE + 1))
-
-        assert 400 <= response.status_code < 500
-        assert not _object_exists(s3_client, storage._bucket_name, job_id)
-
-    def test_zero_byte_file(self, presigned, s3_client, storage, job_id):
-        response = _upload(presigned, b"")
-
-        assert 400 <= response.status_code < 500
-        assert not _object_exists(s3_client, storage._bucket_name, job_id)
-
-    def test_content_type_differs_from_the_one_signed(self, presigned, s3_client, storage, job_id):
-        response = _upload(presigned, b"x", content_type="audio/mpeg")
-
-        assert 400 <= response.status_code < 500
-        assert not _object_exists(s3_client, storage._bucket_name, job_id)
-
-    def test_upload_after_ttl_expires(self, storage, s3_client, job_id):
-        presigned = storage.create_presigned_upload(
-            job_id, ObjectInfo(file_size=MAX_SIZE, file_type=CONTENT_TYPE), expires_in=1
-        )
-        time.sleep(3)
-
-        response = _upload(presigned, b"x")
-
-        assert 400 <= response.status_code < 500
-        assert not _object_exists(s3_client, storage._bucket_name, job_id)

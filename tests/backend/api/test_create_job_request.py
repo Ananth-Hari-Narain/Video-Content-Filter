@@ -29,7 +29,7 @@ def _job_payload(file_type: str, file_size: int = 1024, filter_subtitles: bool =
 
 
 def _stub_successful_storage(mock_storage, presigned_download_url: str = "https://download.example/signed?sig=abc"):
-    mock_storage.create_presigned_upload.return_value = {"url": "https://upload.example", "fields": {}}
+    mock_storage.create_presigned_upload.return_value = "https://upload.example/signed?sig=abc"
     mock_storage.create_presigned_download.return_value = presigned_download_url
 
 
