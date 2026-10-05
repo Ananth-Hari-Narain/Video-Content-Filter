@@ -4,7 +4,6 @@ import json
 import logging
 import subprocess
 import time
-from functools import partial
 
 import pika
 import psycopg
@@ -134,9 +133,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = load_settings()
 
-    db_connection = psycopg.connect(settings.database_url)
-    job_repository = JobRepository(connection=db_connection)
     storage = R2Storage(client=get_r2_client(), bucket_name=settings.bucket_name)
+
+    def on_message(channel, method, properties, body) -> None:
+        # Fresh DB connection per job: a connection held while idle gets dropped by the server/proxy.
+        with psycopg.connect(settings.database_url) as db_connection:
+            handle_message(channel, method, properties, body, JobRepository(db_connection), storage)
 
     connection = pika.BlockingConnection(pika.URLParameters(settings.rabbitmq_url))
     channel = connection.channel()
@@ -144,7 +146,7 @@ def main() -> None:
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(
         queue=settings.job_queue_name,
-        on_message_callback=partial(handle_message, job_repository=job_repository, storage=storage),
+        on_message_callback=on_message,
     )
 
     logger.info("Worker started, waiting for jobs on %s", settings.job_queue_name)
@@ -154,7 +156,6 @@ def main() -> None:
         channel.stop_consuming()
     finally:
         connection.close()
-        db_connection.close()
 
 
 if __name__ == "__main__":
