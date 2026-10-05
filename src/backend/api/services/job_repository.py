@@ -56,4 +56,4 @@ class JobRepository:
             return None
 
         status, stage, percent, d_link = row
-        return JobStatusResponse(status=status, stage=stage, percent=percent, download_link=d_link)
+        return JobStatusResponse(status=status, stage=stage, percent=percent, download_link=d_link or "")
