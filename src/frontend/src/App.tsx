@@ -44,6 +44,10 @@ function App() {
   const [remaining, setRemaining] = useState<number | null>(null)
   const [failure, setFailure] = useState('')
 
+  const [shownId, setShownId] = useState<string | null>(null) // set at creation, before polling starts
+  const [lookupOpen, setLookupOpen] = useState(false)
+  const [lookupId, setLookupId] = useState('')
+
   const runningSince = useRef<number | null>(null)
   const runningSamples = useRef(0)
 
@@ -53,6 +57,9 @@ function App() {
   const reset = () => {
     setPhase(null)
     setJobId(null)
+    setShownId(null)
+    setLookupOpen(false)
+    setLookupId('')
     setStatus(null)
     setRemaining(null)
     setFailure('')
@@ -60,6 +67,14 @@ function App() {
     setMediaSeconds(null)
     runningSince.current = null
     runningSamples.current = 0
+  }
+
+  const viewJob = () => {
+    const id = lookupId.trim()
+    if (!id) return
+    setShownId(id)
+    setJobId(id)
+    setPhase('queued')
   }
 
   const startJob = async (mode: Mode) => {
@@ -74,6 +89,7 @@ function App() {
         fileSize: selectedFile.size,
         fileType: selectedFile.type,
       })
+      setShownId(created.job_id)
       setUploadFraction(0)
       setPhase('uploading')
       await uploadFile(created.upload_url, selectedFile, setUploadFraction)
@@ -145,6 +161,12 @@ function App() {
           <div className="mb-6 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
             {errorMessage}
           </div>
+        )}
+
+        {shownId && (
+          <p className="mb-4 text-sm text-slate-700">
+            Job ID: <code className="select-all rounded bg-slate-100 px-2 py-1 font-mono">{shownId}</code>
+          </p>
         )}
 
         {phase ? (
@@ -224,6 +246,36 @@ function App() {
                 </button>
               </div>
             )}
+
+            <div className="mt-6 border-t border-slate-200 pt-4">
+              {lookupOpen ? (
+                <form
+                  className="flex gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    viewJob()
+                  }}
+                >
+                  <input
+                    value={lookupId}
+                    onChange={(e) => setLookupId(e.target.value)}
+                    placeholder="Job ID"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
+                  />
+                  <button type="submit" className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white">
+                    View
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="text-sm font-semibold text-slate-600 underline"
+                  onClick={() => setLookupOpen(true)}
+                >
+                  View previous job
+                </button>
+              )}
+            </div>
           </section>
         )}
       </div>
