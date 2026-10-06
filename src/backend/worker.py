@@ -119,6 +119,7 @@ def process_job(job: QueuedJob, job_repository: JobRepository, storage: R2Storag
 
 
 def handle_message(channel, method, properties, body, job_repository: JobRepository, storage: R2Storage) -> None:
+    job = None
     try:
         job = QueuedJob.model_validate_json(body)
         logger.info("Picked up job %s", job.job_id)
@@ -126,6 +127,13 @@ def handle_message(channel, method, properties, body, job_repository: JobReposit
         channel.basic_ack(delivery_tag=method.delivery_tag)
     except Exception:
         logger.exception("Failed to process job")
+        if job is not None:
+            try:
+                # Clear any aborted transaction before writing the failure.
+                job_repository._connection.rollback()
+                job_repository.update_progress(job.job_id, "failed", 0, status="failed")
+            except Exception:
+                logger.exception("Could not mark job %s as failed", job.job_id)
         channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 
