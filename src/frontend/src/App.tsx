@@ -1,163 +1,146 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { confirmUpload, createJob, fetchStatus, uploadFile } from './api'
+import type { JobStatusResponse } from './api'
+import { remainingSeconds } from './estimate'
+import { overallProgress, stageProgress } from './stages'
+import StatusCard from './StatusCard'
+import type { Phase } from './StatusCard'
 
-type JobStatus = 'queued' | 'processing' | 'completed' | 'failed'
 type MediaKind = 'audio' | 'video'
 type Mode = 'bleep' | 'audio-only' | 'full'
 
-type JobCreateResponse = {
-  job_id: string
-  status: JobStatus
-  media_type: MediaKind
-  mode: Mode
-  message: string
-}
-
-type JobStatusResponse = {
-  job_id: string
-  status: JobStatus
-  media_type: MediaKind
-  mode: Mode
-  message: string
-  filename: string
-  download_url: string | null
-  error: string | null
-}
-
-type CompletedJob = {
-  id: string
-  filename: string
-  mode: Mode
-  downloadUrl: string
-}
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '')
-
-const audioExt = new Set(['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg'])
-const videoExt = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm'])
+const STATUS_FETCH_INTERVAL = 20_000
+const MAX_FAILED_FETCHES = 3
 
 function detectKind(file: File | null): MediaKind | null {
-  if (!file) {
-    return null
-  }
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  if (audioExt.has(ext)) {
-    return 'audio'
-  }
-  if (videoExt.has(ext)) {
-    return 'video'
-  }
+  if (file?.type.startsWith('audio/')) return 'audio'
+  if (file?.type.startsWith('video/')) return 'video'
   return null
 }
 
-function modeLabel(mode: Mode): string {
-  if (mode === 'bleep') {
-    return 'Bleep out foul language'
+// Reads media duration in the browser. Leaves it null if the browser cannot decode the file.
+function readDuration(file: File, onDuration: (seconds: number | null) => void) {
+  const url = URL.createObjectURL(file)
+  const media = document.createElement(file.type.startsWith('video') ? 'video' : 'audio')
+  const done = (seconds: number | null) => {
+    URL.revokeObjectURL(url)
+    onDuration(seconds)
   }
-  if (mode === 'audio-only') {
-    return 'Bleep out audio only'
-  }
-  return 'Bleep out subtitles and audio'
-}
-
-async function createJob(file: File, mode: Mode): Promise<JobCreateResponse> {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('mode', mode)
-
-  let res: Response
-  try {
-    res = await fetch(`${API_BASE}/api/v1/jobs`, {
-      method: 'POST',
-      body: form,
-    })
-  } catch {
-    throw new Error('Cannot reach backend API. Start FastAPI on http://127.0.0.1:8000.')
-  }
-
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}))
-    const reason = detail.detail || `Request failed (${res.status})`
-    throw new Error(`Unable to start filtering job: ${reason}`)
-  }
-
-  return (await res.json()) as JobCreateResponse
-}
-
-async function fetchJob(jobId: string): Promise<JobStatusResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`)
-  if (!res.ok) {
-    throw new Error('Unable to fetch job status.')
-  }
-  return (await res.json()) as JobStatusResponse
+  media.preload = 'metadata'
+  media.onloadedmetadata = () => done(Number.isFinite(media.duration) ? media.duration : null)
+  media.onerror = () => done(null)
+  media.src = url
 }
 
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [mediaSeconds, setMediaSeconds] = useState<number | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [notification, setNotification] = useState<string | null>(null)
-  const [completedJobs, setCompletedJobs] = useState<CompletedJob[]>([])
+
+  const [phase, setPhase] = useState<Phase | null>(null) // null = file picker
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [uploadFraction, setUploadFraction] = useState(0)
+  const [status, setStatus] = useState<JobStatusResponse | null>(null)
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [failure, setFailure] = useState('')
+
+  const [shownId, setShownId] = useState<string | null>(null) // set at creation, before polling starts
+  const [lookupOpen, setLookupOpen] = useState(false)
+  const [lookupId, setLookupId] = useState('')
+
+  const runningSince = useRef<number | null>(null)
+  const runningSamples = useRef(0)
 
   const mediaKind = useMemo(() => detectKind(selectedFile), [selectedFile])
+  const progress = status ? stageProgress(status.stage, status.percent) : stageProgress('downloading', 0)
+
+  const reset = () => {
+    setPhase(null)
+    setJobId(null)
+    setShownId(null)
+    setLookupOpen(false)
+    setLookupId('')
+    setStatus(null)
+    setRemaining(null)
+    setFailure('')
+    setSelectedFile(null)
+    setMediaSeconds(null)
+    runningSince.current = null
+    runningSamples.current = 0
+  }
+
+  const viewJob = () => {
+    const id = lookupId.trim()
+    if (!id) return
+    setShownId(id)
+    setJobId(id)
+    setPhase('queued')
+  }
 
   const startJob = async (mode: Mode) => {
     if (!selectedFile) {
       return
     }
-
-    setNotification(null)
     setErrorMessage(null)
 
     try {
-      const created = await createJob(selectedFile, mode)
-      setCurrentJobId(created.job_id)
-      setIsProcessing(true)
-      setSelectedFile(null)
-
-      const poll = window.setInterval(async () => {
-        try {
-          const job = await fetchJob(created.job_id)
-
-          if (job.status === 'completed') {
-            window.clearInterval(poll)
-            setIsProcessing(false)
-            if (job.download_url) {
-              setCompletedJobs((prev) => [
-                {
-                  id: created.job_id,
-                  filename: job.filename,
-                  mode: job.mode,
-                  downloadUrl: `${API_BASE}${job.download_url}`,
-                },
-                ...prev,
-              ])
-            }
-            setNotification('Filtering complete. Your download is ready.')
-            setCurrentJobId(null)
-          }
-
-          if (job.status === 'failed') {
-            window.clearInterval(poll)
-            setIsProcessing(false)
-            setErrorMessage(job.error || 'Filtering failed.')
-            setCurrentJobId(null)
-          }
-        } catch {
-          window.clearInterval(poll)
-          setIsProcessing(false)
-          setErrorMessage('Status polling failed. Please try again.')
-          setCurrentJobId(null)
-        }
-      }, 2000)
+      const created = await createJob({
+        filterSubtitles: mode === 'full',
+        fileSize: selectedFile.size,
+        fileType: selectedFile.type,
+      })
+      setShownId(created.job_id)
+      setUploadFraction(0)
+      setPhase('uploading')
+      await uploadFile(created.upload_url, selectedFile, setUploadFraction)
+      await confirmUpload(created.job_id)
+      setPhase('queued')
+      setJobId(created.job_id)
     } catch (err) {
-      if (err instanceof Error) {
-        setErrorMessage(err.message)
-      } else {
-        setErrorMessage('Unable to submit file.')
-      }
+      setPhase(null)
+      setErrorMessage(err instanceof Error ? err.message : 'Unable to submit file.')
     }
   }
+
+  // Polls job status until the job is done or failed.
+  useEffect(() => {
+    if (!jobId || phase === 'done' || phase === 'failed') {
+      return
+    }
+    let failedFetches = 0
+
+    const poll = async () => {
+      try {
+        const job = await fetchStatus(jobId)
+        failedFetches = 0
+        setStatus(job)
+
+        if (job.status === 'done') {
+          setPhase('done')
+        } else if (job.status === 'failed') {
+          setFailure('Processing failed.')
+          setPhase('failed')
+        } else if (job.status === 'running') {
+          runningSince.current ??= Date.now()
+          runningSamples.current += 1
+          const elapsed = (Date.now() - runningSince.current) / 1000
+          const overall = overallProgress(stageProgress(job.stage, job.percent))
+          setRemaining(remainingSeconds(overall, runningSamples.current, elapsed, mediaSeconds))
+          setPhase('running')
+        }
+      } catch (err) {
+        failedFetches += 1
+        if (failedFetches >= MAX_FAILED_FETCHES) {
+          setFailure(err instanceof Error ? err.message : 'Unable to fetch job status.')
+          setPhase('failed')
+        }
+      }
+    }
+
+    void poll()
+    const timer = window.setInterval(poll, STATUS_FETCH_INTERVAL)
+    return () => window.clearInterval(timer)
+  }, [jobId, phase === 'done' || phase === 'failed']) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="min-h-screen bg-[radial-gradient(1200px_500px_at_20%_-20%,#fecdd3,transparent),radial-gradient(1200px_500px_at_80%_120%,#bae6fd,transparent),#fff8f2] px-4 py-10 text-slate-900">
@@ -174,46 +157,28 @@ function App() {
           </p>
         </header>
 
-        {notification && (
-          <div className="mb-6 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-            {notification}
-          </div>
-        )}
-
         {errorMessage && (
           <div className="mb-6 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
             {errorMessage}
           </div>
         )}
 
-        {completedJobs.length > 0 && (
-          <section className="mb-6 space-y-3">
-            {completedJobs.map((job) => (
-              <article
-                key={job.id}
-                className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm md:flex-row md:items-center md:justify-between"
-              >
-                <div>
-                  <h2 className="text-base font-bold">{job.filename}</h2>
-                  <p className="text-sm text-slate-600">{modeLabel(job.mode)}</p>
-                </div>
-                <a
-                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-                  href={job.downloadUrl}
-                >
-                  Download filtered file
-                </a>
-              </article>
-            ))}
-          </section>
+        {shownId && (
+          <p className="mb-4 text-sm text-slate-700">
+            Job ID: <code className="select-all rounded bg-slate-100 px-2 py-1 font-mono">{shownId}</code>
+          </p>
         )}
 
-        {isProcessing ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-            <h2 className="mt-4 text-2xl font-black text-slate-900">Filtering profanity</h2>
-            <p className="mt-2 text-sm text-slate-600">This can take a little while for longer videos.</p>
-            <p className="text-xs mt-1 tracking-[0.2em] text-slate-500">JOB: {currentJobId}</p>
-          </section>
+        {phase ? (
+          <StatusCard
+            phase={phase}
+            uploadFraction={uploadFraction}
+            stageProgress={progress}
+            remaining={remaining}
+            downloadLink={status?.download_link ?? ''}
+            error={failure}
+            onRetry={reset}
+          />
         ) : (
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
             <label
@@ -236,8 +201,9 @@ function App() {
                 const next = event.target.files?.[0] || null
                 setSelectedFile(next)
                 setErrorMessage(null)
-                setNotification(null)
-              }}
+                setMediaSeconds(null)
+                if (next) readDuration(next, setMediaSeconds)
+                              }}
             />
 
             {!selectedFile && <p className="text-sm text-slate-600">Choose a file to see available actions.</p>}
@@ -280,6 +246,36 @@ function App() {
                 </button>
               </div>
             )}
+
+            <div className="mt-6 border-t border-slate-200 pt-4">
+              {lookupOpen ? (
+                <form
+                  className="flex gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    viewJob()
+                  }}
+                >
+                  <input
+                    value={lookupId}
+                    onChange={(e) => setLookupId(e.target.value)}
+                    placeholder="Job ID"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
+                  />
+                  <button type="submit" className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white">
+                    View
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="text-sm font-semibold text-slate-600 underline"
+                  onClick={() => setLookupOpen(true)}
+                >
+                  View previous job
+                </button>
+              )}
+            </div>
           </section>
         )}
       </div>

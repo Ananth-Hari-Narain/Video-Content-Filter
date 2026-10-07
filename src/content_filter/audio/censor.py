@@ -13,9 +13,10 @@ logging.getLogger("faster_whisper").setLevel(logging.WARNING)
 
 
 class AudioCensorer:
-    def __init__(self, model_name = "small") -> None:
+    def __init__(self, model_name = "small", on_progress=None) -> None:
         self.__model =  WhisperModel(model_name)
         self.progress = 0
+        self.on_progress = on_progress
 
     def censor_audio_from_video(self, video_path: str, profanity_set: set[str], output_folder: str, tmpdir="temp", debug_output_on: bool = True):
         # Create temporary directory
@@ -97,8 +98,12 @@ class AudioCensorer:
                     for word in (segment.words or [])]
             })
             self.progress = segment.end / info.duration
-            print(f"\rTranscribing: {self.progress:.0%} ", end="", flush=True)
-        print()
+            if self.on_progress is not None:
+                self.on_progress("transcribe", round(self.progress * 100))
+            else:
+                print(f"\rTranscribing: {self.progress:.0%} ", end="", flush=True)
+        if self.on_progress is None:
+            print()
 
         tmp_output_path = f"{output_path}.tmp"
         with open(tmp_output_path, "w", encoding="utf-8") as file:

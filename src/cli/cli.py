@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -36,6 +37,13 @@ def _ensure_parent(path: str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
+def _progress_callback(args):
+    def _emit_progress_json(stage: str, percent: int) -> None:
+        print(json.dumps({"stage": stage, "percent": percent}), flush=True)
+        
+    return _emit_progress_json if args.progress_json else None
+
+
 def _run_filter_audio(args) -> int:
     output_path = args.output or _default_audio_output_path(args.input)
     _ensure_parent(output_path)
@@ -50,7 +58,7 @@ def _run_filter_audio(args) -> int:
         else:
             os.mkdir(tmpdir)
 
-    censorer = AudioCensorer()
+    censorer = AudioCensorer(on_progress=_progress_callback(args))
     profanity_set = _load_default_profanity_set(tmpdir)
     _, result_path = censorer.censor_audio_file(
         audio_path=args.input,
@@ -77,7 +85,8 @@ def _run_filter_video(args) -> int:
         else:
             os.mkdir(tmpdir)
 
-    censorer = AudioCensorer()
+    on_progress = _progress_callback(args)
+    censorer = AudioCensorer(on_progress=on_progress)
     profanity_set = _load_default_profanity_set(tmpdir)
     bad_word_timestamps, censored_audio_path = censorer.censor_audio_from_video(
         video_path=args.input,
@@ -93,6 +102,7 @@ def _run_filter_video(args) -> int:
             args.input,
             bad_word_timestamps,
             get_relative_character_widths(),
+            on_progress=on_progress,
         )
         # get_bounding_quads returns int frame keys; keep ints for fast lookup.
         quad_map = {int(k): v for k, v in quad_map.items()}
@@ -127,6 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep temporary files when an auto-created temp directory is used.",
     )
+    audio_cmd.add_argument(
+        "--progress-json",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     audio_cmd.set_defaults(handler=_run_filter_audio)
 
     video_cmd = subparsers.add_parser(
@@ -149,6 +164,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--keep-temp",
         action="store_true",
         help="Keep temporary files when an auto-created temp directory is used.",
+    )
+    video_cmd.add_argument(
+        "--progress-json",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     video_cmd.set_defaults(handler=_run_filter_video)
 

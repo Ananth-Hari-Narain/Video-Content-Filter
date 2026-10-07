@@ -12,6 +12,11 @@ requires-python = ">=3.10"
 [project.scripts]
 vcf = "cli.cli:main"
 
+[tool.pytest.ini_options]
+markers = ["integration: needs the docker-compose.test.yml services (run with `pytest -m integration`)"]
+addopts = "-m 'not integration'"
+testpaths = ["tests"]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

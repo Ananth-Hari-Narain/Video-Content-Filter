@@ -1,13 +1,11 @@
 easyocr==1.7.2
 faster-whisper==1.2.1
 soundfile==0.14.0
-fastapi==0.129.2
-uvicorn[standard]
-python-multipart
 numpy==2.4.6
 boto3==1.43.67
 pika==1.4.4
 psycopg[binary]==3.3.4
-redis==8.1.0
+pydantic
 requests==2.34.2
 python-dotenv==1.2.2
+redis==8.1.0
